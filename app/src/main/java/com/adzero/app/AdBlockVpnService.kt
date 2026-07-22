@@ -29,13 +29,13 @@ class AdBlockVpnService : VpnService() {
     private var outputStream: FileOutputStream? = null
     private val threadPool = Executors.newFixedThreadPool(10) as ThreadPoolExecutor
 
-    // Blocklist - Expanded for YouTube banners and tracking
+    // Blocklist - Aggressively expanded for Sponsored banners and tracking
     private val blockedDomains = setOf(
         "googleadservices.com", "googlesyndication.com", "doubleclick.net",
         "googletagmanager.com", "googletagservices.com", "google-analytics.com",
         "analytics.google.com", "adservice.google.com", "pagead2.googlesyndication.com",
         "tpc.googlesyndication.com", "ads.youtube.com", "ad.youtube.com",
-        "youtubei.googleapis.com", "play.googleapis.com", "beacons.gcp.gvt2.com",
+        "play.googleapis.com", "beacons.gcp.gvt2.com",
         "redirector.googlevideo.com", "adsafeprotected.com", "moatads.com",
         "adsrvr.org", "serving-sys.com", "advertising.com", "adnxs.com",
         "adsystem.com", "criteo.com", "rubiconproject.com", "pubmatic.com",
@@ -47,12 +47,16 @@ class AdBlockVpnService : VpnService() {
         "yieldmo.com", "undertone.com", "spotxchange.com", "spotx.tv",
         "liveintent.com", "yieldbot.com", "tidaltv.com", "videologygroup.com",
         "freewheel.tv", "stickyadstv.com",
-        // Additional banner & tracking domains
         "s.youtube.com", "video-stats.l.google.com", "adssettings.google.com",
         "adstats.google.com", "googleads.g.doubleclick.net", "pubads.g.doubleclick.net",
         "securepubads.g.doubleclick.net", "partnerad.l.doubleclick.net",
         "pagead.googlesyndication.com", "pagead-tpc.l.google.com", "beacons.gvt2.com",
-        "ade.googlesyndication.com", "afad.googlesyndication.com"
+        "ade.googlesyndication.com", "afad.googlesyndication.com",
+        // New aggressive domains for "Sponsored" content
+        "jnn-pa.googleapis.com", "youtube-ui.l.google.com",
+        "app-measurement.com", "firebase-settings.crashlytics.com",
+        "click.googleatls.com", "remotemessaging.googleapis.com",
+        "beacons3.gvt2.com", "suggestqueries.google.com", "stats.g.doubleclick.net"
     )
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
