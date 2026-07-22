@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Material 3 Light/Dark friendly colors -->
+    <color name="primary">#0061A4</color>
+    <color name="onPrimary">#FFFFFF</color>
+    <color name="surface">#F8F9FF</color>
+    <color name="onSurface">#191C20</color>
+    <color name="surfaceVariant">#DEE3EB</color>
+    <color name="onSurfaceVariant">#42474E</color>
+    <color name="success">#00E676</color>
+    <color name="error">#BA1A1A</color>
+</resources>

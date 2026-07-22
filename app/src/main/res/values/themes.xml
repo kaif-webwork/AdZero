@@ -1,0 +1,14 @@
+<resources>
+    <style name="Theme.AdZero" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorOnPrimary">@color/onPrimary</item>
+
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor">?android:attr/colorBackground</item>
+        <item name="android:windowLightStatusBar">true</item>
+
+        <!-- Navigation bar color. -->
+        <item name="android:navigationBarColor">?android:attr/colorBackground</item>
+    </style>
+</resources>

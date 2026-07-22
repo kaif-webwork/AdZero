@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">AdZero</string>
+    <string name="status_protected">PROTECTED</string>
+    <string name="status_not_protected">NOT PROTECTED</string>
+    <string name="enable_blocking">Enable DNS Filter</string>
+    <string name="disable_blocking">Disable DNS Filter</string>
+    <string name="notification_title">AdZero DNS Filter Active</string>
+    <string name="notification_text">Privacy filter is active!</string>
+    <string name="trademark">kaifcoder.in</string>
+    <string name="made_by">Made by KaifCoder</string>
+    <string name="thanks_for_using">Thanks For using</string>
+</resources>
