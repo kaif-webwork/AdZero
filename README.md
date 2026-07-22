@@ -16,6 +16,9 @@ Aap yahan se latest version download kar sakte hain:
 
 ### [👉 Download AdZero.apk Here 👈](https://github.com/kaif-webwork/AdZero/releases/latest)
 
+> **🚀 Latest Update**: Simplified Minimal UI - Removed statistics for faster and cleaner experience.
+
+
 > **Note:** Download karne ke baad, APK ko install karein. Agar "Unsafe App" block kare, to "Install Anyway" pe click karein kyunki ye ek self-signed debug build hai.
 
 ---
