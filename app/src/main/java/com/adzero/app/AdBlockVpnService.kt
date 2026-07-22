@@ -156,7 +156,13 @@ class AdBlockVpnService : VpnService() {
     private fun incrementBlockedCount() {
         val prefs = getSharedPreferences("adblock_prefs", MODE_PRIVATE)
         val currentCount = prefs.getInt("blocked_count", 0)
-        prefs.edit().putInt("blocked_count", currentCount + 1).apply()
+        val newCount = currentCount + 1
+        prefs.edit().putInt("blocked_count", newCount).apply()
+
+        // Send real-time broadcast to update UI
+        val intent = Intent("com.adzero.app.UPDATE_COUNT")
+        intent.putExtra("count", newCount)
+        sendBroadcast(intent)
     }
 
     private fun forwardDnsQuery(packet: ByteBuffer, length: Int, dnsOffset: Int): ByteArray? {
