@@ -1,83 +1,62 @@
-# YouTube Ads Blocker - Android App
+# AdZero - Privacy & DNS Filter for Android
 
-## Kya Hai Ye App?
-Ye ek Android app hai jo **local VPN** ke zariye YouTube ke ad servers ko block karta hai.  
-**Bina root ke kaam karta hai!** 🎉
+<p align="center">
+  <img src="https://img.shields.io/badge/AdZero-Secure-brightgreen" alt="AdZero Status">
+  <img src="https://img.shields.io/badge/Root-Not%20Required-blue" alt="No Root Needed">
+  <img src="https://img.shields.io/badge/Platform-Android-orange" alt="Android">
+</p>
+
+AdZero is a modern, Material 3 privacy tool that blocks YouTube ads and tracking domains using a lightweight local DNS filter. It restores your privacy and provides a clean, ad-free experience without requiring root access.
 
 ---
 
-## App Kaise Kaam Karta Hai?
+## 📥 Download AdZero APK
 
+Aap yahan se latest version download kar sakte hain:
+
+### [👉 Download AdZero.apk Here 👈](https://github.com/kaif-webwork/AdZero/releases/latest)
+
+> **Note:** Download karne ke baad, APK ko install karein. Agar "Unsafe App" block kare, to "Install Anyway" pe click karein kyunki ye ek self-signed debug build hai.
+
+---
+
+## ✨ Features
+- **Accurate Ad Blocking**: Blocks home-feed banners, video-overlay ads, and mid-rolls.
+- **Global Optimization**: Optimized for all apps (WhatsApp, Chrome, etc.) to work at full speed.
+- **Material 3 UI**: Clean "Google OS" style with adaptive light/dark mode.
+- **Real-time Stats**: Live counter showing exactly how many ads have been blocked.
+- **Privacy First**: Local-only VPN, zero data usage monitoring.
+
+---
+
+## 🛠️ How to Use
+1. **Install** the APK on your Android device.
+2. **Open AdZero** and tap the **Enable Privacy Protection** switch.
+3. **Allow** the VPN connection request when prompted.
+4. **Enjoy** a clean YouTube experience!
+
+---
+
+## 📂 Project Structure
 ```
-📱 Aapka Phone
-    ↓
-🔒 Local VPN (sirf aapke phone pe)
-    ↓
-🔍 DNS Packets Check karta hai
-    ↓
-❌ Ad domains block → NXDOMAIN response
-✅ YouTube content pass → Normal internet
-```
-
-## Block Hone Wale Domains (50+)
-- `googleadservices.com`
-- `doubleclick.net`
-- `ads.youtube.com`
-- `pagead2.googlesyndication.com`
-- aur bahut saare...
-
----
-
-## Android Studio Mein Kaise Open Karein?
-
-### Step 1: Android Studio Download karein
-👉 https://developer.android.com/studio
-
-### Step 2: Project Open karein
-1. Android Studio kholo
-2. `File → Open` click karo
-3. `C:\Users\mohdk\Desktop\AdZero Privacy Filter` folder select karo
-4. **OK** dabao
-
-### Step 3: Build karein
-1. Wait karo Gradle sync ke liye (~2-3 minutes)
-2. Apna phone connect karo USB se (ya emulator use karo)
-3. `Run → Run 'app'` click karo (ya green ▶️ button)
-
-### Step 4: Phone pe Install
-1. Phone pe `Developer Options` enable karein
-2. `USB Debugging` on karein
-3. App automatically install ho jayega
-
----
-
-## App Use Karna
-1. App kholo
-2. **Big button** tap karo
-3. VPN permission maange to **Allow** karo
-4. Status `PROTECTED` ho jayega ✅
-5. Ab YouTube kholo → **Ads nahi aayenge!** 🎉
-
----
-
-## Files Structure
-```
-AdZero Privacy Filter/
+AdZero/
 ├── app/
 │   ├── src/main/
-│   │   ├── AndroidManifest.xml     ← Permissions
-│   │   ├── java/com/youtubeadsblocker/
-│   │   │   ├── MainActivity.kt     ← Main Screen
-│   │   │   ├── AdBlockVpnService.kt ← Core Blocking
-│   │   │   └── BootReceiver.kt     ← Auto-start
+│   │   ├── java/com/adzero/app/
+│   │   │   ├── AdBlockVpnService.kt  (Core Logic)
+│   │   │   ├── MainActivity.kt       (Dashboard)
+│   │   │   └── SplashActivity.kt     (Start Page)
 │   │   └── res/
-│   │       ├── layout/activity_main.xml ← UI Design
-│   │       └── drawable/           ← Icons & Shapes
-│   └── build.gradle
-├── build.gradle
-└── settings.gradle
+│   │       ├── layout/               (UI Design)
+│   │       └── values/               (Colors & Strings)
 ```
 
 ---
 
-> ⚠️ **Note:** Pehli baar app start karne pe phone VPN permission maangega. **Allow** karo — ye sirf local hai, koi data bahar nahi jata!
+## 👨‍💻 Developed By
+**Made by KaifCoder**  
+Website: [kaifcoder.in](https://kaifcoder.in)
+
+---
+
+> ⚠️ **Disclaimer:** This app is for privacy and educational purposes. AdZero does not store or transmit your personal data.
