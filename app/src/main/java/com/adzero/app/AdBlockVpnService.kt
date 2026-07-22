@@ -17,7 +17,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.Executors
-import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.LinkedBlockingQueue
 
 class AdBlockVpnService : VpnService() {
 
@@ -27,9 +27,12 @@ class AdBlockVpnService : VpnService() {
     private val CHANNEL_ID = "AdZeroChannel"
     
     private var outputStream: FileOutputStream? = null
-    private val threadPool = Executors.newFixedThreadPool(10) as ThreadPoolExecutor
+    private val threadPool = Executors.newFixedThreadPool(16)
+    
+    // High-speed socket pool to fix slowness and avoid frequent object creation
+    private val socketPool = LinkedBlockingQueue<DatagramSocket>(30)
 
-    // Blocklist - Aggressively expanded for Sponsored banners and tracking
+    // Comprehensive Blocklist for YouTube Ads, Sponsored content, and tracking
     private val blockedDomains = setOf(
         "googleadservices.com", "googlesyndication.com", "doubleclick.net",
         "googletagmanager.com", "googletagservices.com", "google-analytics.com",
@@ -52,11 +55,13 @@ class AdBlockVpnService : VpnService() {
         "securepubads.g.doubleclick.net", "partnerad.l.doubleclick.net",
         "pagead.googlesyndication.com", "pagead-tpc.l.google.com", "beacons.gvt2.com",
         "ade.googlesyndication.com", "afad.googlesyndication.com",
-        // New aggressive domains for "Sponsored" content
         "jnn-pa.googleapis.com", "youtube-ui.l.google.com",
         "app-measurement.com", "firebase-settings.crashlytics.com",
         "click.googleatls.com", "remotemessaging.googleapis.com",
-        "beacons3.gvt2.com", "suggestqueries.google.com", "stats.g.doubleclick.net"
+        "beacons3.gvt2.com", "suggestqueries.google.com", "stats.g.doubleclick.net",
+        "youtubei.googleapis.com", "m.youtube.com/pagead", "m.youtube.com/get_video_info",
+        "adr.googleapis.com", "ads-api.twitter.com", "ads.linkedin.com",
+        "pixel.facebook.com", "graph.facebook.com", "analytics.facebook.com"
     )
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -76,17 +81,19 @@ class AdBlockVpnService : VpnService() {
             val builder = Builder()
             builder.setMtu(1500)
             builder.addAddress("10.0.0.2", 32)
+            
+            // Route Google DNS through VPN for filtering
             builder.addRoute("8.8.8.8", 32)
             builder.addRoute("8.8.4.4", 32)
             builder.addDnsServer("8.8.8.8")
             builder.addDnsServer("8.8.4.4")
-            builder.setSession("AdZero Privacy Filter")
+            builder.setSession("AdZero High-Speed Filter")
 
             vpnInterface = builder.establish()
             isRunning = true
             outputStream = FileOutputStream(vpnInterface?.fileDescriptor)
 
-            Log.d(TAG, "VPN Started - Async DNS Filtering Active")
+            Log.d(TAG, "VPN Started - High-Performance Async Mode")
             Thread { runVpnLoop() }.start()
         } catch (e: Exception) {
             Log.e(TAG, "Error starting VPN: ${e.message}")
@@ -159,7 +166,6 @@ class AdBlockVpnService : VpnService() {
         val newCount = currentCount + 1
         prefs.edit().putInt("blocked_count", newCount).apply()
 
-        // Send real-time broadcast to update UI
         val intent = Intent("com.adzero.app.UPDATE_COUNT")
         intent.putExtra("count", newCount)
         sendBroadcast(intent)
@@ -176,15 +182,15 @@ class AdBlockVpnService : VpnService() {
                 packet.get(16), packet.get(17), packet.get(18), packet.get(19)
             ))
 
-            socket = DatagramSocket()
-            protect(socket)
+            // Efficiently reuse sockets from pool
+            socket = socketPool.poll() ?: DatagramSocket().apply { protect(this) }
             
             val outPacket = DatagramPacket(dnsQuery, dnsQuery.size, destIp, 53)
             socket.send(outPacket)
 
             val responseBuffer = ByteArray(4096)
             val inPacket = DatagramPacket(responseBuffer, responseBuffer.size)
-            socket.soTimeout = 2500
+            socket.soTimeout = 2000
             socket.receive(inPacket)
 
             val ihl = (packet.get(0).toInt() and 0x0F) * 4
@@ -205,11 +211,14 @@ class AdBlockVpnService : VpnService() {
             response[ihl + 6] = 0; response[ihl + 7] = 0
             
             System.arraycopy(inPacket.data, 0, response, ihl + 8, inPacket.length)
+            
+            // Return healthy socket to pool
+            socketPool.offer(socket)
+            
             response
         } catch (e: Exception) { 
-            null 
-        } finally {
             socket?.close()
+            null 
         }
     }
 

@@ -42,10 +42,27 @@ class MainActivity : AppCompatActivity() {
 
         updateUI()
         setupToggle()
+        setupSettingsButton()
 
         // Initial count update
         val savedCount = prefs.getInt("blocked_count", 0)
         updateBlockedCountUI(savedCount)
+    }
+
+    private fun setupSettingsButton() {
+        findViewById<View>(R.id.settingsButton).setOnClickListener {
+            val intent = Intent("android.net.vpn.SETTINGS")
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            try {
+                startActivity(intent)
+            } catch (e: Exception) {
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_VPN_SETTINGS))
+                } catch (ex: Exception) {
+                    android.util.Log.e("AdZero", "Could not open VPN settings")
+                }
+            }
+        }
     }
 
     override fun onResume() {
