@@ -1,14 +1,27 @@
-<resources>
-    <style name="Theme.AdZero" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/primary</item>
-        <item name="colorOnPrimary">@color/onPrimary</item>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.AdZero" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/yt_red</item>
+        <item name="colorPrimaryVariant">@color/yt_red_dark</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/yt_red</item>
+        <item name="colorSurface">@color/bg_secondary</item>
+        <item name="android:colorBackground">@color/bg_primary</item>
+        <item name="android:windowBackground">@color/bg_primary</item>
+        <item name="android:statusBarColor">@color/bg_primary</item>
+        <item name="android:navigationBarColor">@color/bg_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
 
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor">?android:attr/colorBackground</item>
-        <item name="android:windowLightStatusBar">true</item>
+    <!-- Player fullscreen theme -->
+    <style name="Theme.AdZero.Player" parent="Theme.AdZero">
+        <item name="android:statusBarColor">@color/black</item>
+        <item name="android:navigationBarColor">@color/black</item>
+    </style>
 
-        <!-- Navigation bar color. -->
-        <item name="android:navigationBarColor">?android:attr/colorBackground</item>
+    <style name="RoundedThumbnail">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">12dp</item>
     </style>
 </resources>
