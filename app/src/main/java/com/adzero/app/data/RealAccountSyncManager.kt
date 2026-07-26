@@ -19,6 +19,14 @@ object RealAccountSyncManager {
 
     private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
+    /** Validates a URL is HTTPS before we attach session cookies to a request. */
+    private fun requireHttps(url: String): String {
+        require(url.startsWith("https://")) {
+            "Security: Refusing to send session cookies over non-HTTPS URL: $url"
+        }
+        return url
+    }
+
     /**
      * Authenticated Live Account Data Fetcher using User's Session Cookies.
      * Fetches Real Subscriptions, Real History, Real Liked Videos & Real Playlists.
@@ -28,8 +36,9 @@ object RealAccountSyncManager {
 
         try {
             // 1. Fetch Real Subscriptions Feed (https://www.youtube.com/feed/subscriptions)
+            val subUrl = requireHttps("https://www.youtube.com/feed/subscriptions")
             val subRequest = Request.Builder()
-                .url("https://www.youtube.com/feed/subscriptions")
+                .url(subUrl)
                 .addHeader("Cookie", cookies)
                 .addHeader("User-Agent", USER_AGENT)
                 .build()
@@ -56,8 +65,9 @@ object RealAccountSyncManager {
             }
 
             // 2. Fetch Real Watch History (https://www.youtube.com/feed/history)
+            val historyUrl = requireHttps("https://www.youtube.com/feed/history")
             val historyRequest = Request.Builder()
-                .url("https://www.youtube.com/feed/history")
+                .url(historyUrl)
                 .addHeader("Cookie", cookies)
                 .addHeader("User-Agent", USER_AGENT)
                 .build()
@@ -80,8 +90,9 @@ object RealAccountSyncManager {
             }
 
             // 3. Fetch Real Liked Videos Playlist (https://www.youtube.com/playlist?list=LL)
+            val likedUrl = requireHttps("https://www.youtube.com/playlist?list=LL")
             val likedRequest = Request.Builder()
-                .url("https://www.youtube.com/playlist?list=LL")
+                .url(likedUrl)
                 .addHeader("Cookie", cookies)
                 .addHeader("User-Agent", USER_AGENT)
                 .build()

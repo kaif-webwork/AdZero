@@ -14,12 +14,16 @@ import javax.crypto.spec.GCMParameterSpec
 /**
  * Enterprise-grade Hardware-Backed Encryption Engine for YouTube Account Tokens.
  * Uses Android KeyStore (TEE / Secure Enclave) with AES-256 GCM Encryption.
+ *
+ * All encrypted values are stored with an "ENC:" prefix so that plain-text or
+ * legacy values are never silently accepted during decryption.
  */
 object SecureStorage {
     private const val KEY_ALIAS = "AdZero_Secure_Account_Key_v1"
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val PREFS_NAME = "adzero_secure_account_vault"
+    private const val ENC_PREFIX = "ENC:"
 
     private fun getSecretKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
@@ -54,17 +58,24 @@ object SecureStorage {
             System.arraycopy(iv, 0, combined, 0, iv.size)
             System.arraycopy(encryptedBytes, 0, combined, iv.size, encryptedBytes.size)
 
-            Base64.encodeToString(combined, Base64.NO_WRAP)
+            // Prefix with ENC: so plain-text / legacy values are always distinguishable
+            ENC_PREFIX + Base64.encodeToString(combined, Base64.NO_WRAP)
         } catch (e: Exception) {
+            // NEVER fall back to plain text — return empty so callers treat this as "no value"
             e.printStackTrace()
-            plainText
+            ""
         }
     }
 
     fun decrypt(encryptedBase64: String): String {
         if (encryptedBase64.isEmpty()) return ""
+        // Reject anything that was not encrypted by this class (no ENC: prefix = legacy or tampered)
+        if (!encryptedBase64.startsWith(ENC_PREFIX)) {
+            return ""
+        }
         return try {
-            val combined = Base64.decode(encryptedBase64, Base64.NO_WRAP)
+            val base64Part = encryptedBase64.removePrefix(ENC_PREFIX)
+            val combined = Base64.decode(base64Part, Base64.NO_WRAP)
             val iv = ByteArray(12) // GCM IV length is 12 bytes
             System.arraycopy(combined, 0, iv, 0, iv.size)
 
