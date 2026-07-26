@@ -5,22 +5,6 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
-    <uses-permission android:name="android.permission.MANAGE_ACCOUNTS" />
-    <uses-permission android:name="android.permission.USE_CREDENTIALS" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
-
-    <queries>
-        <package android:name="app.revanced.android.gms" />
-        <package android:name="org.microg.gms" />
-        <package android:name="com.mgoogle.android.gms" />
-        <package android:name="com.google.android.gms" />
-        <package android:name="com.vanced.android.youtube" />
-        <package android:name="com.lsa.microg" />
-        <intent>
-            <action android:name="android.intent.action.MAIN" />
-        </intent>
-    </queries>
 
     <application
         android:name=".App"
