@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import com.adzero.app.data.HistoryManager
+import com.adzero.app.data.RealAccountSyncManager
+import com.adzero.app.data.UserAccountManager
 import com.adzero.app.models.Video
 import com.adzero.app.theme.ThemeMode
 
@@ -40,14 +43,34 @@ fun ProfileScreen(
     onSettingsClick: () -> Unit = {}
 ) {
     var showAuthSheet by remember { mutableStateOf(false) }
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val isLoggedIn  = UserAccountManager.isLoggedIn
+    val userName    = UserAccountManager.userName
+    val userEmail   = UserAccountManager.userEmail
+    val avatarUrl   = UserAccountManager.userAvatarUrl
+    val isSyncing   = RealAccountSyncManager.isSyncing
+    val syncError   = RealAccountSyncManager.lastSyncError
+
+    // Auto-sync whenever the user logs in
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn) {
+            val cookies = UserAccountManager.userCookies
+            if (!cookies.isNullOrBlank()) {
+                scope.launch {
+                    RealAccountSyncManager.syncAccountWithCookies(context, cookies)
+                }
+            }
+        }
+    }
 
     if (showAuthSheet) {
         com.adzero.app.components.YouTubeAuthSheet(
             onDismiss = { showAuthSheet = false },
             onSuccess = { name, email, avatar ->
                 showAuthSheet = false
-                android.widget.Toast.makeText(context, "Account Connected Successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, "Account Connected! Syncing your data…", android.widget.Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -87,11 +110,6 @@ fun ProfileScreen(
         ) {
             // ── Secure YouTube Account Header Card ───────────────────────────
             item {
-                val isLoggedIn = com.adzero.app.data.UserAccountManager.isLoggedIn
-                val userName = com.adzero.app.data.UserAccountManager.userName
-                val userEmail = com.adzero.app.data.UserAccountManager.userEmail
-                val avatarUrl = com.adzero.app.data.UserAccountManager.userAvatarUrl
-
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -151,27 +169,88 @@ fun ProfileScreen(
                                     )
                                 }
 
+                                // Sync status badge
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(Color(0xFF1B5E20).copy(alpha = 0.2f))
+                                        .background(
+                                            if (isSyncing) Color(0xFF1565C0).copy(alpha = 0.2f)
+                                            else Color(0xFF1B5E20).copy(alpha = 0.2f)
+                                        )
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Text(
-                                        text = "Active ✓",
-                                        color = Color(0xFF4CAF50),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    if (isSyncing) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(10.dp),
+                                                color = Color(0xFF1E88E5),
+                                                strokeWidth = 1.5.dp
+                                            )
+                                            Text(
+                                                text = "Syncing",
+                                                color = Color(0xFF1E88E5),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            text = "Active ✓",
+                                            color = Color(0xFF4CAF50),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
 
-                            OutlinedButton(
-                                onClick = { com.adzero.app.data.UserAccountManager.logout(context) },
+                            // Sync error message
+                            if (!syncError.isNullOrBlank()) {
+                                Text(
+                                    text = syncError,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+
+                            // Sync & Sign Out buttons
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(20.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text("Sign Out of YouTube Account")
+                                // Sync button
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val cookies = UserAccountManager.userCookies
+                                            if (!cookies.isNullOrBlank()) {
+                                                RealAccountSyncManager.syncAccountWithCookies(context, cookies)
+                                            }
+                                        }
+                                    },
+                                    enabled = !isSyncing,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh, null,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Sync", fontSize = 13.sp)
+                                }
+
+                                // Sign Out button
+                                OutlinedButton(
+                                    onClick = { UserAccountManager.logout(context) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    Text("Sign Out", fontSize = 13.sp)
+                                }
                             }
                         } else {
                             Row(
