@@ -12,51 +12,52 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+
 private val LightColorScheme = lightColorScheme(
     primary = CrimsonRed,
     secondary = PremiumBlue,
-    background = Color.White,
-    surface = LightGray,
+    background = Color(0xFFFFFFFF),
+    surface = Color(0xFFFFFFFF),
+    surfaceVariant = LightCardSurface,
     onPrimary = Color.White,
-    onBackground = JetBlack,
-    onSurface = JetBlack
-)
-
-private val DarkColorScheme = darkColorScheme(
-    primary = CrimsonRed,
-    secondary = PremiumBlue,
-    background = JetBlack,
-    surface = DarkGray,
-    onPrimary = Color.White,
-    onBackground = Color.White,
-    onSurface = Color.White
+    onSecondary = Color.White,
+    onBackground = Color(0xFF0F0F0F),
+    onSurface = Color(0xFF0F0F0F),
+    onSurfaceVariant = Color(0xFF606060),
+    outline = Color(0xFFE0E0E0)
 )
 
 private val AmoledColorScheme = darkColorScheme(
     primary = CrimsonRed,
     secondary = PremiumBlue,
     background = PureBlack,
-    surface = JetBlack,
+    surface = PureBlack,
+    surfaceVariant = DarkCardSurface,
     onPrimary = Color.White,
+    onSecondary = Color.White,
     onBackground = Color.White,
-    onSurface = Color.White
+    onSurface = Color.White,
+    onSurfaceVariant = Color(0xFFAAAAAA),
+    outline = Color(0xFF262626)
 )
 
-enum class ThemeMode {
-    LIGHT, DARK, AMOLED, SYSTEM
+enum class ThemeMode(val displayName: String) {
+    AMOLED("AMOLED Dark Mode"),
+    LIGHT("Light Mode"),
+    DARK("AMOLED Dark Mode"),
+    SYSTEM("System Default")
 }
 
 @Composable
 fun AdZeroTheme(
-    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    themeMode: ThemeMode = ThemeMode.AMOLED,
     content: @Composable () -> Unit
 ) {
     val isSystemDark = isSystemInDarkTheme()
     val colorScheme = when (themeMode) {
         ThemeMode.LIGHT -> LightColorScheme
-        ThemeMode.DARK -> DarkColorScheme
-        ThemeMode.AMOLED -> AmoledColorScheme
-        ThemeMode.SYSTEM -> if (isSystemDark) DarkColorScheme else LightColorScheme
+        ThemeMode.AMOLED, ThemeMode.DARK -> AmoledColorScheme
+        ThemeMode.SYSTEM -> if (isSystemDark) AmoledColorScheme else LightColorScheme
     }
 
     val view = LocalView.current
@@ -67,7 +68,7 @@ fun AdZeroTheme(
             window.navigationBarColor = colorScheme.background.toArgb()
             
             val insetsController = WindowCompat.getInsetsController(window, view)
-            val isLight = colorScheme == LightColorScheme
+            val isLight = (colorScheme == LightColorScheme)
             insetsController.isAppearanceLightStatusBars = isLight
             insetsController.isAppearanceLightNavigationBars = isLight
         }

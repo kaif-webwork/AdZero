@@ -1,12 +1,13 @@
 package com.adzero.app.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -21,12 +22,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.adzero.app.Constants
 import com.adzero.app.components.VideoCard
+import com.adzero.app.components.VoiceSearchSheet
 import com.adzero.app.data.ExtractionManager
 import com.adzero.app.data.HistoryManager
 import com.adzero.app.models.Video
@@ -35,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.kiosk.KioskInfo
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
@@ -46,51 +51,53 @@ fun SearchScreen(
     onVideoClick: (Video) -> Unit,
     onChannelClick: (String) -> Unit = {}
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
-    var showResults by remember { mutableStateOf(false) }
     var searchResultsState by remember { mutableStateOf<List<Video>>(emptyList()) }
-    var isSearching by remember { mutableStateOf(false) }
-    var isMoreLoading by remember { mutableStateOf(false) }
-    var searchNextPage by remember { mutableStateOf<org.schabi.newpipe.extractor.Page?>(null) }
     var liveSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
-    val searchListState = androidx.compose.foundation.lazy.rememberLazyListState()
-    val scope = rememberCoroutineScope()
+    var realTrendingSearches by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
+    var showResults by remember { mutableStateOf(false) }
+    var searchNextPage by remember { mutableStateOf<org.schabi.newpipe.extractor.Page?>(null) }
+    var isMoreLoading by remember { mutableStateOf(false) }
 
-    // Working Voice Search Launcher via RecognizerIntent
-    val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
-            val spokenResults = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
-            val spokenText = spokenResults?.firstOrNull()
-            if (!spokenText.isNullOrBlank()) {
-                searchQuery = spokenText
-                showResults = true
+    // State for Voice Search Modal Sheet (Speech-to-Text UI)
+    var showVoiceSearchSheet by remember { mutableStateOf(false) }
+
+    val searchListState = rememberLazyListState()
+
+    // Fetch REAL Live YouTube Trending Searches from YouTube's Trending Kiosk
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                val service = ServiceList.YouTube
+                val trendingKiosk = KioskInfo.getInfo(service, "https://www.youtube.com/feed/trending")
+                val trendingTopics = trendingKiosk.relatedItems
+                    .filterIsInstance<StreamInfoItem>()
+                    .mapNotNull { item ->
+                        item.name?.takeIf { it.isNotBlank() }
+                    }
+                    .distinct()
+                    .take(8)
+
+                withContext(Dispatchers.Main) {
+                    if (trendingTopics.isNotEmpty()) {
+                        realTrendingSearches = trendingTopics
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
 
-    fun launchVoiceSearch() {
-        try {
-            val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Speak to search YouTube...")
-            }
-            speechLauncher.launch(intent)
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(context, "Voice search not available on this device", android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // 300ms Debounced live search suggestions
+    // Debounced Live Search Suggestions
     LaunchedEffect(searchQuery) {
         if (searchQuery.isBlank() || showResults) {
             liveSuggestions = emptyList()
             return@LaunchedEffect
         }
-
-        kotlinx.coroutines.delay(300) // 300ms debounce delay
+        kotlinx.coroutines.delay(300) // 300ms debounce
         withContext(Dispatchers.IO) {
             try {
                 val service = ServiceList.YouTube
@@ -99,10 +106,9 @@ fun SearchScreen(
                 val searchInfo = SearchInfo.getInfo(service, queryHandler)
                 val suggestions = searchInfo.relatedItems
                     .filterIsInstance<StreamInfoItem>()
-                    .map { it.name }
-                    .filter { it.isNotBlank() }
-                    .take(7)
-
+                    .mapNotNull { it.name }
+                    .distinct()
+                    .take(5)
                 withContext(Dispatchers.Main) {
                     liveSuggestions = suggestions
                 }
@@ -112,58 +118,57 @@ fun SearchScreen(
         }
     }
 
+    // Fetch initial search results when user triggers search
     LaunchedEffect(showResults, searchQuery) {
         if (showResults && searchQuery.isNotBlank()) {
             isSearching = true
-            HistoryManager.addSearchQuery(searchQuery.trim())
+            HistoryManager.addSearchQuery(context, searchQuery.trim())
             withContext(Dispatchers.IO) {
                 try {
                     val service = ServiceList.YouTube
                     val queryHandler = YoutubeSearchQueryHandlerFactory.getInstance()
                         .fromQuery(searchQuery, emptyList(), "")
                     val searchInfo = SearchInfo.getInfo(service, queryHandler)
-                    val items = searchInfo.relatedItems
+                    val videos = searchInfo.relatedItems
                         .filterIsInstance<StreamInfoItem>()
                         .map { it.toVideo() }
-                    
+                    val nextPage = searchInfo.nextPage
+
                     withContext(Dispatchers.Main) {
-                        searchResultsState = items
-                        searchNextPage = searchInfo.nextPage
-                        
-                        items.take(3).forEach { video ->
-                            ExtractionManager.startExtraction(video, isSpeculative = true)
-                        }
+                        searchResultsState = videos
+                        searchNextPage = nextPage
+                        isSearching = false
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    withContext(Dispatchers.Main) {
+                        isSearching = false
+                    }
                 }
             }
-            isSearching = false
         }
     }
 
     fun loadMoreSearchResults() {
         if (isMoreLoading || searchNextPage == null || searchQuery.isBlank()) return
         isMoreLoading = true
-        scope.launch(Dispatchers.IO) {
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
             try {
                 val service = ServiceList.YouTube
                 val queryHandler = YoutubeSearchQueryHandlerFactory.getInstance()
                     .fromQuery(searchQuery, emptyList(), "")
                 val moreInfo = SearchInfo.getMoreItems(service, queryHandler, searchNextPage)
-                val existingIds = searchResultsState.map { it.id }.toSet()
-                val newItems = moreInfo.items
+                val newVideos = moreInfo.items
                     .filterIsInstance<StreamInfoItem>()
                     .map { it.toVideo() }
-                    .filter { it.id !in existingIds }
+                val nextPage = moreInfo.nextPage
 
                 withContext(Dispatchers.Main) {
-                    searchResultsState = searchResultsState + newItems
-                    searchNextPage = moreInfo.nextPage
+                    val currentIds = searchResultsState.map { it.id }.toSet()
+                    val filteredNew = newVideos.filterNot { currentIds.contains(it.id) }
+                    searchResultsState = searchResultsState + filteredNew
+                    searchNextPage = nextPage
                     isMoreLoading = false
-                    newItems.take(4).forEach { video ->
-                        ExtractionManager.startExtraction(video, isSpeculative = true)
-                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -189,52 +194,113 @@ fun SearchScreen(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 2.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
-                }
-
-                TextField(
-                    value = searchQuery,
-                    onValueChange = {
-                        searchQuery = it
-                        showResults = false
-                    },
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(24.dp)),
-                    placeholder = { Text("Search YouTube...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    trailingIcon = {
-                        Row {
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Back button
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Search input box
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        text = "Search YouTube...",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        fontSize = 15.sp
+                                    )
+                                }
+                                BasicTextField(
+                                    value = searchQuery,
+                                    onValueChange = {
+                                        searchQuery = it
+                                        showResults = false
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    textStyle = TextStyle(
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 15.sp
+                                    ),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(onSearch = {
+                                        if (searchQuery.isNotBlank()) showResults = true
+                                    }),
+                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                                )
+                            }
+
                             if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = ""; showResults = false }) {
-                                    Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onBackground)
+                                IconButton(
+                                    onClick = { searchQuery = ""; showResults = false },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Clear",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
                             }
-                            IconButton(onClick = { launchVoiceSearch() }) {
-                                Icon(imageVector = Icons.Default.Mic, contentDescription = "Voice search", tint = MaterialTheme.colorScheme.primary)
-                            }
                         }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = {
-                        if (searchQuery.isNotBlank()) showResults = true
-                    }),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                        disabledContainerColor = MaterialTheme.colorScheme.surface,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    singleLine = true
-                )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Official YouTube-Style Voice Search Mic Button (Speech-to-Text UI)
+                    Surface(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .clickable { showVoiceSearchSheet = true },
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Voice Search",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     ) { paddingValues ->
@@ -321,15 +387,25 @@ fun SearchScreen(
                         }
                     }
 
-                    // Recent Searches
+                    // Real User Recent Searches
                     if (HistoryManager.searchHistory.isNotEmpty()) {
                         item {
-                            Text(
-                                text = "Recent Searches",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Recent Searches",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                TextButton(onClick = { HistoryManager.clearSearchHistory(context) }) {
+                                    Text("Clear", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
                         }
 
                         items(HistoryManager.searchHistory) { historyItem ->
@@ -352,7 +428,7 @@ fun SearchScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                                 IconButton(
-                                    onClick = { HistoryManager.removeSearchQuery(historyItem) },
+                                    onClick = { HistoryManager.removeSearchQuery(context, historyItem) },
                                     modifier = Modifier.size(24.dp)
                                 ) {
                                     Icon(
@@ -366,35 +442,54 @@ fun SearchScreen(
                         }
                     }
 
-                    // Trending Section
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Trending Searches",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    // REAL Live YouTube Trending Searches Section
+                    val trendingList = realTrendingSearches
+                    if (trendingList.isNotEmpty()) {
+                        item {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Trending Searches 🔥",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
 
-                    items(Constants.TRENDING_SEARCHES) { trendingItem ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    searchQuery = trendingItem
-                                    showResults = true
-                                }
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(imageVector = Icons.Default.TrendingUp, contentDescription = "Trending", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(text = trendingItem, color = MaterialTheme.colorScheme.onBackground, fontSize = 14.sp)
+                        items(trendingList) { trendingItem ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        searchQuery = trendingItem
+                                        showResults = true
+                                    }
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(imageVector = Icons.Default.TrendingUp, contentDescription = "Trending", tint = Color(0xFFFF0055))
+                                Text(
+                                    text = trendingItem,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    // Modal Sheet for Voice Search (Speech-to-Text UI)
+    if (showVoiceSearchSheet) {
+        VoiceSearchSheet(
+            onDismiss = { showVoiceSearchSheet = false },
+            onSearchResult = { spokenText ->
+                searchQuery = spokenText
+                showResults = true
+            }
+        )
     }
 }

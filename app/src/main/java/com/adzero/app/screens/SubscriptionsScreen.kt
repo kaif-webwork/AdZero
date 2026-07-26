@@ -27,9 +27,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.adzero.app.components.SkeletonLoader
 import com.adzero.app.components.VideoCard
-import com.adzero.app.data.RealAccountSyncManager
 import com.adzero.app.data.SubscriptionManager
-import com.adzero.app.data.UserAccountManager
 import com.adzero.app.models.Creator
 import com.adzero.app.models.Video
 import com.adzero.app.models.toVideo
@@ -46,29 +44,22 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 @Composable
 fun SubscriptionsScreen(
     onVideoClick: (Video) -> Unit,
-    onChannelClick: (String) -> Unit = {}
+    onChannelClick: (String) -> Unit = {},
+    onSearchClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val isLoggedIn = UserAccountManager.isLoggedIn
-    val isSyncing = RealAccountSyncManager.isSyncing
-    val syncError = RealAccountSyncManager.lastSyncError
-
-    // Real subscribed channels from the user's account
+    // Subscribed channels map from SubscriptionManager (local user subscriptions)
     val subscribedChannels = SubscriptionManager.subscribedChannels.values.toList()
-    // Real subscription feed videos from the user's account
-    val realFeedVideos = SubscriptionManager.subscriptionFeedVideos.toList()
 
-    // Fallback state — used only when NOT logged in
-    var fallbackCreators by remember { mutableStateOf<List<Creator>>(emptyList()) }
-    var fallbackFeedVideos by remember { mutableStateOf<List<Video>>(emptyList()) }
-    var isFallbackLoading by remember { mutableStateOf(false) }
+    var channelsState by remember { mutableStateOf<List<Creator>>(emptyList()) }
+    var feedVideosState by remember { mutableStateOf<List<Video>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
 
-    // Load fallback content only when user is not logged in
-    LaunchedEffect(isLoggedIn) {
-        if (!isLoggedIn && fallbackFeedVideos.isEmpty()) {
-            isFallbackLoading = true
+    fun loadSubscriptionContent() {
+        isLoading = true
+        scope.launch {
             withContext(Dispatchers.IO) {
                 try {
                     val service = ServiceList.YouTube
@@ -78,7 +69,7 @@ fun SubscriptionsScreen(
 
                     val extractedCreators = channelSearchInfo.relatedItems
                         .filterIsInstance<ChannelInfoItem>()
-                        .take(8)
+                        .take(10)
                         .mapIndexed { index, item ->
                             Creator(
                                 id = item.url,
@@ -98,30 +89,21 @@ fun SubscriptionsScreen(
                         .map { it.toVideo() }
 
                     withContext(Dispatchers.Main) {
-                        fallbackCreators = extractedCreators
-                        fallbackFeedVideos = feedVideos
-                        isFallbackLoading = false
+                        channelsState = extractedCreators
+                        feedVideosState = feedVideos
+                        isLoading = false
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    withContext(Dispatchers.Main) { isFallbackLoading = false }
+                    withContext(Dispatchers.Main) { isLoading = false }
                 }
             }
         }
     }
 
-    // Determine what to display
-    val displayCreators: List<Any> = when {
-        isLoggedIn && subscribedChannels.isNotEmpty() -> subscribedChannels
-        !isLoggedIn -> fallbackCreators
-        else -> emptyList()
+    LaunchedEffect(Unit) {
+        loadSubscriptionContent()
     }
-    val displayVideos: List<Video> = when {
-        isLoggedIn && realFeedVideos.isNotEmpty() -> realFeedVideos
-        !isLoggedIn -> fallbackFeedVideos
-        else -> emptyList()
-    }
-    val isLoading = isSyncing || (!isLoggedIn && isFallbackLoading)
 
     Scaffold(
         topBar = {
@@ -134,7 +116,7 @@ fun SubscriptionsScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp
                         )
-                        if (isLoggedIn && subscribedChannels.isNotEmpty()) {
+                        if (subscribedChannels.isNotEmpty()) {
                             Text(
                                 text = "${subscribedChannels.size} channels",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -144,38 +126,17 @@ fun SubscriptionsScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = {}) {
+                    IconButton(onClick = onSearchClick) {
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = "Search",
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
-                    // Refresh button — only shown when logged in
-                    if (isLoggedIn) {
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    val cookies = UserAccountManager.userCookies
-                                    if (!cookies.isNullOrBlank()) {
-                                        RealAccountSyncManager.syncAccountWithCookies(context, cookies)
-                                    }
-                                }
-                            },
-                            enabled = !isSyncing
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh",
-                                tint = if (isSyncing) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                                       else MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                    }
-                    IconButton(onClick = {}) {
+                    IconButton(onClick = { loadSubscriptionContent() }) {
                         Icon(
-                            imageVector = Icons.Default.List,
-                            contentDescription = "List",
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh",
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
@@ -183,7 +144,7 @@ fun SubscriptionsScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 ),
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                windowInsets = TopAppBarDefaults.windowInsets
             )
         }
     ) { paddingValues ->
@@ -192,55 +153,19 @@ fun SubscriptionsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // ── Sync loading bar ───────────────────────────────────────────
-            if (isSyncing) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFFFF0000)
-                )
-            }
-
-            // ── Sync error banner ──────────────────────────────────────────
-            if (!syncError.isNullOrBlank() && isLoggedIn) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.errorContainer)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = syncError,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        fontSize = 12.sp,
-                        modifier = Modifier.weight(1f)
+            // ── Local Subscribed Channels / Creators Row ──────────────────────
+            val displayChannels = if (subscribedChannels.isNotEmpty()) {
+                subscribedChannels.map {
+                    Creator(
+                        id = it.name,
+                        name = it.name,
+                        avatarUrl = it.avatarUrl,
+                        hasStory = true
                     )
                 }
-            }
+            } else channelsState
 
-            // ── "Sign in" prompt when not logged in ────────────────────────
-            if (!isLoggedIn) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = "Sign in to see videos from your subscribed channels",
-                        modifier = Modifier.padding(12.dp),
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // ── Channel avatar row ─────────────────────────────────────────
-            if (displayCreators.isNotEmpty()) {
+            if (displayChannels.isNotEmpty()) {
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -248,21 +173,11 @@ fun SubscriptionsScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (isLoggedIn) {
-                        items(subscribedChannels) { channel ->
-                            RealChannelAvatarItem(
-                                name = channel.name,
-                                avatarUrl = channel.avatarUrl,
-                                onClick = { onChannelClick(channel.name) }
-                            )
-                        }
-                    } else {
-                        items(fallbackCreators) { creator ->
-                            CreatorAvatarItem(
-                                creator = creator,
-                                onChannelClick = onChannelClick
-                            )
-                        }
+                    items(displayChannels) { creator ->
+                        SubscribedCreatorAvatarItem(
+                            creator = creator,
+                            onChannelClick = onChannelClick
+                        )
                     }
                 }
                 HorizontalDivider(
@@ -270,7 +185,7 @@ fun SubscriptionsScreen(
                 )
             }
 
-            // ── Video feed ─────────────────────────────────────────────────
+            // ── Video Feed ─────────────────────────────────────────────────
             when {
                 isLoading -> {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -278,45 +193,7 @@ fun SubscriptionsScreen(
                     }
                 }
 
-                isLoggedIn && realFeedVideos.isEmpty() && !isSyncing -> {
-                    // Logged in but no feed data yet
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Text(
-                                "Your subscription feed is loading…",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 14.sp
-                            )
-                            if (!syncError.isNullOrBlank()) {
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            val cookies = UserAccountManager.userCookies
-                                            if (!cookies.isNullOrBlank()) {
-                                                RealAccountSyncManager.syncAccountWithCookies(context, cookies)
-                                            }
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFFFF0000)
-                                    )
-                                ) {
-                                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Retry Sync")
-                                }
-                            }
-                        }
-                    }
-                }
-
-                displayVideos.isEmpty() -> {
+                feedVideosState.isEmpty() -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -333,7 +210,7 @@ fun SubscriptionsScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 64.dp)
                     ) {
-                        items(displayVideos, key = { it.id }) { video ->
+                        items(feedVideosState, key = { it.id }) { video ->
                             VideoCard(
                                 video = video,
                                 onClick = { onVideoClick(video) },
@@ -347,19 +224,15 @@ fun SubscriptionsScreen(
     }
 }
 
-// ── Composables ───────────────────────────────────────────────────────────────
-
-/** Avatar item for a real subscribed channel from the user's account. */
 @Composable
-fun RealChannelAvatarItem(
-    name: String,
-    avatarUrl: String,
-    onClick: () -> Unit
+fun SubscribedCreatorAvatarItem(
+    creator: Creator,
+    onChannelClick: (String) -> Unit
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .clickable { onClick() }
+            .clickable { onChannelClick(creator.name) }
             .width(64.dp)
     ) {
         Box(
@@ -367,54 +240,11 @@ fun RealChannelAvatarItem(
                 .size(60.dp)
                 .clip(CircleShape)
                 .border(
-                    width = 2.dp,
-                    color = Color(0xFFFF0000),
+                    width = if (creator.hasStory) 2.dp else 0.dp,
+                    color = if (creator.isLive) Color.Red else Color(0xFFFF0000),
                     shape = CircleShape
                 )
-        ) {
-            AsyncImage(
-                model = avatarUrl,
-                contentDescription = name,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(CircleShape),
-                contentScale = ContentScale.Crop
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = name,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-        )
-    }
-}
-
-/** Avatar item for a fallback / public channel (not from user's account). */
-@Composable
-fun CreatorAvatarItem(
-    creator: Creator,
-    onChannelClick: (String) -> Unit
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onChannelClick(creator.name) }
-    ) {
-        Box(
-            modifier = Modifier
-                .size(60.dp)
-                .clip(CircleShape)
-                .border(
-                    width = if (creator.hasStory) 2.5.dp else 0.dp,
-                    color = if (creator.isLive) Color.Red else MaterialTheme.colorScheme.primary,
-                    shape = CircleShape
-                )
-                .padding(if (creator.hasStory) 3.dp else 0.dp)
+                .padding(if (creator.hasStory) 2.dp else 0.dp)
         ) {
             AsyncImage(
                 model = creator.avatarUrl,
@@ -450,7 +280,8 @@ fun CreatorAvatarItem(
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
         )
     }
 }

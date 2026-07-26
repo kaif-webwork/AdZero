@@ -1,8 +1,6 @@
 package com.adzero.app.data
 
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
-import com.adzero.app.models.Video
 
 data class SubscribedChannel(
     val name: String,
@@ -11,11 +9,8 @@ data class SubscribedChannel(
 )
 
 object SubscriptionManager {
-    // Subscribed channels from the user's real account (populated by RealAccountSyncManager)
+    // Local user's subscribed channels
     val subscribedChannels = mutableStateMapOf<String, SubscribedChannel>()
-
-    // Real subscription feed videos from the user's account
-    val subscriptionFeedVideos = mutableStateListOf<Video>()
 
     fun isSubscribed(channelName: String): Boolean {
         return subscribedChannels.containsKey(channelName)

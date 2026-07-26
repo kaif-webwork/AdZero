@@ -52,8 +52,13 @@ class App : Application(), ImageLoaderFactory {
         super.onCreate()
         
         okHttpClient = OkHttpClient.Builder()
-            .readTimeout(30, TimeUnit.SECONDS)
-            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .connectionPool(okhttp3.ConnectionPool(20, 5, TimeUnit.MINUTES))
+            .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
             .build()
 
         // Initialize NewPipe and Player on background threads
@@ -68,14 +73,9 @@ class App : Application(), ImageLoaderFactory {
             }
         }
         
-        // Warm up the player & pre-warm feed cache
-        com.adzero.app.data.UserAccountManager.init(this)
-        val cookies = com.adzero.app.data.UserAccountManager.userCookies
-        if (!cookies.isNullOrBlank()) {
-            CoroutineScope(Dispatchers.IO).launch {
-                com.adzero.app.data.RealAccountSyncManager.syncAccountWithCookies(this@App, cookies)
-            }
-        }
+        // Warm up history, quality settings, player & pre-warm feed cache
+        com.adzero.app.data.HistoryManager.init(this)
+        com.adzero.app.data.PlayerQualityManager.init(this)
         com.adzero.app.data.WarmFeedCache.prewarm(this)
         GlobalPlayerManager.getPlayer(this)
     }

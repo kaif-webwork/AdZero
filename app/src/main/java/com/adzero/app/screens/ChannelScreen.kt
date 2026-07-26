@@ -168,7 +168,7 @@ fun ChannelScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                windowInsets = TopAppBarDefaults.windowInsets
             )
         }
     ) { paddingValues ->

@@ -1,58 +1,72 @@
 package com.adzero.app.screens
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.adzero.app.data.ContentLanguageManager
 import com.adzero.app.theme.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    onBack: () -> Unit,
     currentTheme: ThemeMode,
-    onThemeChange: (ThemeMode) -> Unit,
-    onBack: () -> Unit
+    onThemeChange: (ThemeMode) -> Unit
 ) {
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
-
-    var autoPlayEnabled by remember { mutableStateOf(true) }
-    var wifiDownloadsOnly by remember { mutableStateOf(true) }
-    var dataSaverEnabled by remember { mutableStateOf(false) }
+    var sponsorBlockEnabled by remember { mutableStateOf(true) }
+    var adBlockerEnabled by remember { mutableStateOf(true) }
     var backgroundPlayEnabled by remember { mutableStateOf(true) }
-
-    var showAuthSheet by remember { mutableStateOf(false) }
-    var showLanguageSheet by remember { mutableStateOf(false) }
-    var currentLang by remember { mutableStateOf(com.adzero.app.data.ContentLanguageManager.getCurrentLanguage(context)) }
+    var highQualityAudioEnabled by remember { mutableStateOf(true) }
+    var selectedLanguage by remember { mutableStateOf(ContentLanguageManager.getCurrentLanguage(context)) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
+                title = {
+                    Text(
+                        text = "Settings",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
+                windowInsets = TopAppBarDefaults.windowInsets
             )
         }
     ) { paddingValues ->
@@ -63,250 +77,118 @@ fun SettingsScreen(
                 .background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
-
-            if (showAuthSheet) {
-                item {
-                    com.adzero.app.components.YouTubeAuthSheet(
-                        onDismiss = { showAuthSheet = false },
-                        onSuccess = { name, email, avatar ->
-                            showAuthSheet = false
-                            android.widget.Toast.makeText(context, "Connected to $name!", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    )
-                }
-            }
-
-            // Account Section
-            item {
-                SettingsSectionHeader("YouTube Account")
-            }
-
-            item {
-                val isLoggedIn = com.adzero.app.data.UserAccountManager.isLoggedIn
-                val userName = com.adzero.app.data.UserAccountManager.userName
-                val userEmail = com.adzero.app.data.UserAccountManager.userEmail
-
-                SettingsActionRow(
-                    icon = Icons.Default.AccountCircle,
-                    title = if (isLoggedIn) "Account: $userName" else "Sign In with YouTube Account",
-                    subtitle = if (isLoggedIn) "$userEmail • Connected & Active" else "Securely sign in via Google to sync your real data",
-                    onClick = {
-                        if (isLoggedIn) {
-                            com.adzero.app.data.UserAccountManager.logout(context)
-                            android.widget.Toast.makeText(context, "Signed out", android.widget.Toast.LENGTH_SHORT).show()
-                        } else {
-                            showAuthSheet = true
-                        }
-                    }
-                )
-            }
-
             // General & Theme Section
             item {
                 SettingsSectionHeader("Appearance & General")
             }
 
             item {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text("Theme Mode", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        ThemeMode.entries.forEach { mode ->
-                            val isSelected = currentTheme == mode
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        onThemeChange(mode)
-                                    }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = mode.name,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Content Language & Location Section
-            item {
-                SettingsSectionHeader("Content Language & Region")
-            }
-
-            item {
                 SettingsActionRow(
-                    icon = Icons.Default.Translate,
-                    title = "Content Language: ${currentLang.flagEmoji} ${currentLang.name}",
-                    subtitle = "App feeds, searches, and video audio streams will prefer ${currentLang.nativeName}",
+                    icon = Icons.Default.Palette,
+                    title = "App Theme",
+                    subtitle = "Current: ${currentTheme.displayName}",
                     onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        showLanguageSheet = true
+                        val nextTheme = when (currentTheme) {
+                            ThemeMode.AMOLED, ThemeMode.DARK -> ThemeMode.LIGHT
+                            else -> ThemeMode.AMOLED
+                        }
+                        onThemeChange(nextTheme)
                     }
                 )
+            }
 
-                if (showLanguageSheet) {
-                    ModalBottomSheet(
-                        onDismissRequest = { showLanguageSheet = false },
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 8.dp
+            item {
+                var showLangMenu by remember { mutableStateOf(false) }
+
+                Box {
+                    SettingsActionRow(
+                        icon = Icons.Default.Language,
+                        title = "Content Language",
+                        subtitle = "${selectedLanguage.name} (${selectedLanguage.nativeName})",
+                        onClick = { showLangMenu = true }
+                    )
+
+                    DropdownMenu(
+                        expanded = showLangMenu,
+                        onDismissRequest = { showLangMenu = false }
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 12.dp)
-                        ) {
-                            Text(
-                                text = "Select Content Language",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(bottom = 16.dp)
-                            )
-
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 400.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                items(com.adzero.app.data.ContentLanguageManager.supportedLanguages.size) { index ->
-                                    val lang = com.adzero.app.data.ContentLanguageManager.supportedLanguages[index]
-                                    val isSelected = currentLang.languageCode == lang.languageCode && currentLang.countryCode == lang.countryCode
-
+                        ContentLanguageManager.supportedLanguages.forEach { lang ->
+                            DropdownMenuItem(
+                                text = {
                                     Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
-                                            .clickable {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                com.adzero.app.data.ContentLanguageManager.setContentLanguage(context, lang)
-                                                currentLang = lang
-                                                showLanguageSheet = false
-                                                Toast.makeText(context, "Content language updated to ${lang.name}", Toast.LENGTH_SHORT).show()
-                                            }
-                                            .padding(horizontal = 16.dp, vertical = 14.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                        ) {
-                                            Text(text = lang.flagEmoji, fontSize = 22.sp)
-                                            Column {
-                                                Text(
-                                                    text = lang.name,
-                                                    fontSize = 15.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = lang.nativeName,
-                                                    fontSize = 12.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                        if (isSelected) {
+                                        Text("${lang.name} (${lang.nativeName})")
+                                        if (lang.languageCode == selectedLanguage.languageCode) {
                                             Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = "Selected",
-                                                tint = MaterialTheme.colorScheme.primary
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
+                                },
+                                onClick = {
+                                    selectedLanguage = lang
+                                    ContentLanguageManager.setContentLanguage(context, lang)
+                                    showLangMenu = false
                                 }
-                            }
-                            Spacer(modifier = Modifier.height(24.dp))
+                            )
                         }
                     }
                 }
             }
 
-            // Playback Section
+            // Ad Blocking & SponsorBlock Section
             item {
-                SettingsSectionHeader("Playback")
+                SettingsSectionHeader("Ad Blocking & SponsorBlock")
             }
 
             item {
-                SettingsSwitchRow(
+                SettingsToggleRow(
+                    icon = Icons.Default.Block,
+                    title = "Ad Zero Engine",
+                    subtitle = "Block all video ads, banners, and popup ads completely",
+                    checked = adBlockerEnabled,
+                    onCheckedChange = { adBlockerEnabled = it }
+                )
+            }
+
+            item {
+                SettingsToggleRow(
+                    icon = Icons.Default.Shield,
+                    title = "SponsorBlock Integration",
+                    subtitle = "Automatically skip sponsored segments, intros & outros",
+                    checked = sponsorBlockEnabled,
+                    onCheckedChange = { sponsorBlockEnabled = it }
+                )
+            }
+
+            // Media & Playback Section
+            item {
+                SettingsSectionHeader("Media & Playback")
+            }
+
+            item {
+                SettingsToggleRow(
                     icon = Icons.Default.PlayCircle,
-                    title = "Autoplay next video",
-                    subtitle = "Automatically start playing the next related video",
-                    checked = autoPlayEnabled,
-                    onCheckedChange = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        autoPlayEnabled = it
-                    }
-                )
-            }
-
-            item {
-                SettingsSwitchRow(
-                    icon = Icons.Default.Headset,
-                    title = "Background Audio Playback",
-                    subtitle = "Continue playing audio when app is minimized",
+                    title = "Background Playback",
+                    subtitle = "Continue playing audio when app is minimized or screen off",
                     checked = backgroundPlayEnabled,
-                    onCheckedChange = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        backgroundPlayEnabled = it
-                    }
-                )
-            }
-
-            // Data Saver & Downloads Section
-            item {
-                SettingsSectionHeader("Data Saver & Downloads")
-            }
-
-            item {
-                SettingsSwitchRow(
-                    icon = Icons.Default.DataUsage,
-                    title = "Data Saver Mode",
-                    subtitle = "Automatically adjust stream quality to save cellular data",
-                    checked = dataSaverEnabled,
-                    onCheckedChange = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        dataSaverEnabled = it
-                    }
+                    onCheckedChange = { backgroundPlayEnabled = it }
                 )
             }
 
             item {
-                SettingsSwitchRow(
-                    icon = Icons.Default.Wifi,
-                    title = "Download Over Wi-Fi Only",
-                    subtitle = "Avoid downloading videos using mobile data",
-                    checked = wifiDownloadsOnly,
-                    onCheckedChange = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        wifiDownloadsOnly = it
-                    }
-                )
-            }
-
-            item {
-                SettingsActionRow(
-                    icon = Icons.Default.DeleteSweep,
-                    title = "Clear Cache",
-                    subtitle = "Free up space used by temporary video thumbnails & buffer",
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        Toast.makeText(context, "Cache cleared successfully", Toast.LENGTH_SHORT).show()
-                    }
+                SettingsToggleRow(
+                    icon = Icons.Default.Speed,
+                    title = "High Quality Audio",
+                    subtitle = "Stream high-bitrate Opus/AAC audio tracks when available",
+                    checked = highQualityAudioEnabled,
+                    onCheckedChange = { highQualityAudioEnabled = it }
                 )
             }
 
@@ -319,16 +201,7 @@ fun SettingsScreen(
                 SettingsActionRow(
                     icon = Icons.Default.Info,
                     title = "AdZero Version",
-                    subtitle = "v2.0.0 (Ad-Free Engine Build)",
-                    onClick = {}
-                )
-            }
-
-            item {
-                SettingsActionRow(
-                    icon = Icons.Default.Shield,
-                    title = "Ad-Blocking Shield Active",
-                    subtitle = "All video ads, banner ads, and popup overlays blocked",
+                    subtitle = "4.0 (Build 2026)",
                     onClick = {}
                 )
             }
@@ -340,15 +213,15 @@ fun SettingsScreen(
 fun SettingsSectionHeader(title: String) {
     Text(
         text = title,
+        color = MaterialTheme.colorScheme.primary,
         fontSize = 13.sp,
         fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp)
+        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp)
     )
 }
 
 @Composable
-fun SettingsSwitchRow(
+fun SettingsToggleRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
@@ -360,18 +233,35 @@ fun SettingsSwitchRow(
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(imageVector = icon, contentDescription = title, tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(24.dp))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
-            Text(text = subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = MaterialTheme.colorScheme.primary)
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+            )
         )
     }
 }
@@ -387,14 +277,28 @@ fun SettingsActionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(imageVector = icon, contentDescription = title, tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(24.dp))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
-            Text(text = subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

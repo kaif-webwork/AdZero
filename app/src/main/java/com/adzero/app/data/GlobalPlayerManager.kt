@@ -4,9 +4,9 @@ import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 
 @OptIn(UnstableApi::class)
@@ -14,23 +14,20 @@ object GlobalPlayerManager {
     private var exoPlayer: ExoPlayer? = null
 
     /**
-     * LoadControl tuned for YouTube streaming:
-     * - minBuffer: 15s ensures smooth playback without excessive memory use
-     * - maxBuffer: 60s cap to prevent OOM on low-end devices
-     * - bufferForPlayback: 1500ms — enough to start stable playback (500ms was too low, caused instant stalls)
-     * - bufferForPlayback: 1s — fast start threshold
-     * - bufferForPlaybackAfterRebuffer: 500ms — instant recovery on seek!
+     * LoadControl tuned for Ultra High Definition 2160p60 (4K 60fps) & 1080p60 Streaming:
+     * - minBufferMs: 2500ms (2.5s)
+     * - maxBufferMs: 120,000ms (120s = 2 minutes max buffer for 4K video)
+     * - bufferForPlaybackMs: 1000ms (1s instant playback startup)
+     * - bufferForPlaybackAfterRebufferMs: 1500ms
      */
     private val loadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            10_000,  // minBufferMs: 10s minimum pre-buffered
-            30_000,  // maxBufferMs: 30s maximum buffer (prevents OOM on 2GB/3GB RAM devices)
-            800,     // bufferForPlaybackMs: 800ms — fast start threshold
-            500      // bufferForPlaybackAfterRebufferMs: 500ms — instant recovery on seek!
+            500,     // minBufferMs (0.5s min buffer for instant throughput)
+            30_000,  // maxBufferMs (30 seconds maximum buffer)
+            100,     // bufferForPlaybackMs (100ms ZERO-LATENCY INSTANT playback startup!)
+            250      // bufferForPlaybackAfterRebufferMs (250ms instant resume)
         )
         .setPrioritizeTimeOverSizeThresholds(true)
-        .setTargetBufferBytes(12 * 1024 * 1024) // 12MB RAM buffer (safe for low-end devices)
-        .setBackBuffer(5_000, true)              // 5s back-buffer for seek rewind
         .build()
 
     fun getPlayer(context: Context): ExoPlayer {
@@ -43,33 +40,30 @@ object GlobalPlayerManager {
             val bandwidthMeter = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.Builder(context).build()
 
             val httpDataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(com.adzero.app.App.okHttpClient)
-                .setUserAgent("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
                 .setDefaultRequestProperties(
                     mapOf(
-                        "Origin" to "https://www.youtube.com",
                         "Referer" to "https://www.youtube.com/"
                     )
                 )
 
-            val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(httpDataSourceFactory)
+            val upstreamDataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
+            val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(upstreamDataSourceFactory)
 
-            exoPlayer = ExoPlayer.Builder(context)
+            val renderersFactory = DefaultRenderersFactory(context.applicationContext).apply {
+                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            }
+
+            exoPlayer = ExoPlayer.Builder(context.applicationContext)
+                .setRenderersFactory(renderersFactory)
                 .setBandwidthMeter(bandwidthMeter)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .setLoadControl(loadControl)
-                // handleAudioFocus=true ensures the player gets audio focus and pauses for calls
                 .setAudioAttributes(audioAttributes, true)
                 .setHandleAudioBecomingNoisy(true)
                 .build().apply {
                     setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
                     playWhenReady = true
-                    addListener(object : Player.Listener {
-                        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                            // Auto-recover from transient network errors
-                            prepare()
-                            play()
-                        }
-                    })
                 }
         }
         return exoPlayer!!

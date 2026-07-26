@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -17,7 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -27,10 +25,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import kotlinx.coroutines.launch
 import com.adzero.app.data.HistoryManager
-import com.adzero.app.data.RealAccountSyncManager
-import com.adzero.app.data.UserAccountManager
+import com.adzero.app.data.PlaylistManager
 import com.adzero.app.models.Video
 import com.adzero.app.theme.ThemeMode
 
@@ -42,37 +38,15 @@ fun ProfileScreen(
     onVideoClick: (Video) -> Unit,
     onSettingsClick: () -> Unit = {}
 ) {
-    var showAuthSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    var showHistoryScreen by remember { mutableStateOf(false) }
 
-    val isLoggedIn  = UserAccountManager.isLoggedIn
-    val userName    = UserAccountManager.userName
-    val userEmail   = UserAccountManager.userEmail
-    val avatarUrl   = UserAccountManager.userAvatarUrl
-    val isSyncing   = RealAccountSyncManager.isSyncing
-    val syncError   = RealAccountSyncManager.lastSyncError
-
-    // Auto-sync whenever the user logs in
-    LaunchedEffect(isLoggedIn) {
-        if (isLoggedIn) {
-            val cookies = UserAccountManager.userCookies
-            if (!cookies.isNullOrBlank()) {
-                scope.launch {
-                    RealAccountSyncManager.syncAccountWithCookies(context, cookies)
-                }
-            }
-        }
-    }
-
-    if (showAuthSheet) {
-        com.adzero.app.components.YouTubeAuthSheet(
-            onDismiss = { showAuthSheet = false },
-            onSuccess = { name, email, avatar ->
-                showAuthSheet = false
-                android.widget.Toast.makeText(context, "Account Connected! Syncing your data…", android.widget.Toast.LENGTH_SHORT).show()
-            }
+    if (showHistoryScreen) {
+        HistoryScreen(
+            onBack = { showHistoryScreen = false },
+            onVideoClick = onVideoClick
         )
+        return
     }
 
     Scaffold(
@@ -86,9 +60,6 @@ fun ProfileScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
-                    }
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Outlined.Settings, contentDescription = "Settings", modifier = Modifier.size(24.dp))
                     }
@@ -97,7 +68,7 @@ fun ProfileScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 ),
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                windowInsets = TopAppBarDefaults.windowInsets
             )
         }
     ) { padding ->
@@ -108,7 +79,7 @@ fun ProfileScreen(
                 .background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            // ── Secure YouTube Account Header Card ───────────────────────────
+            // ── Clean AdZero Local User Profile Card ──────────────────────────
             item {
                 Card(
                     modifier = Modifier
@@ -119,487 +90,293 @@ fun ProfileScreen(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                     )
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        if (isLoggedIn) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                if (!avatarUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = avatarUrl,
-                                        contentDescription = "Avatar",
-                                        modifier = Modifier.size(52.dp).clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(52.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(0xFFFF0000)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = userName.take(1).uppercase(),
-                                            color = Color.White,
-                                            fontSize = 22.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(
-                                            text = userName,
-                                            fontSize = 16.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onBackground
-                                        )
-                                        Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
-                                    }
-                                    Text(
-                                        text = userEmail,
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                // Sync status badge
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(
-                                            if (isSyncing) Color(0xFF1565C0).copy(alpha = 0.2f)
-                                            else Color(0xFF1B5E20).copy(alpha = 0.2f)
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    if (isSyncing) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(10.dp),
-                                                color = Color(0xFF1E88E5),
-                                                strokeWidth = 1.5.dp
-                                            )
-                                            Text(
-                                                text = "Syncing",
-                                                color = Color(0xFF1E88E5),
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    } else {
-                                        Text(
-                                            text = "Active ✓",
-                                            color = Color(0xFF4CAF50),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Sync error message
-                            if (!syncError.isNullOrBlank()) {
-                                Text(
-                                    text = syncError,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-
-                            // Sync & Sign Out buttons
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Sync button
-                                OutlinedButton(
-                                    onClick = {
-                                        scope.launch {
-                                            val cookies = UserAccountManager.userCookies
-                                            if (!cookies.isNullOrBlank()) {
-                                                RealAccountSyncManager.syncAccountWithCookies(context, cookies)
-                                            }
-                                        }
-                                    },
-                                    enabled = !isSyncing,
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(20.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Refresh, null,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Sync", fontSize = 13.sp)
-                                }
-
-                                // Sign Out button
-                                OutlinedButton(
-                                    onClick = { UserAccountManager.logout(context) },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(20.dp)
-                                ) {
-                                    Text("Sign Out", fontSize = 13.sp)
-                                }
-                            }
-                        } else {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.Red),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.PlayArrow,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Connect YouTube Account",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onBackground
-                                    )
-                                    Text(
-                                        text = "Securely sign in to access your real subscriptions, history & playlists.",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = 16.sp
-                                    )
-                                }
-                            }
-
-                            Button(
-                                onClick = { showAuthSheet = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(20.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000))
-                            ) {
-                                Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Sign In with Google / YouTube", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-
-
-            // ── Quick Access Row (History, Watch Later, Playlists) ──────────
-            item {
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item {
-                        YouQuickAccessCard(
-                            icon = Icons.Default.History,
-                            label = "History",
-                            thumbnail = HistoryManager.watchHistory.firstOrNull()?.thumbnailUrl,
-                            onClick = {}
-                        )
-                    }
-                    item {
-                        YouQuickAccessCard(
-                            icon = Icons.Outlined.WatchLater,
-                            label = "Watch later",
-                            thumbnail = null,
-                            onClick = {}
-                        )
-                    }
-                    item {
-                        YouQuickAccessCard(
-                            icon = Icons.Default.VideoLibrary,
-                            label = "Liked videos",
-                            thumbnail = null,
-                            onClick = {}
-                        )
-                    }
-                    item {
-                        YouQuickAccessCard(
-                            icon = Icons.Default.PlaylistPlay,
-                            label = "Playlists",
-                            thumbnail = null,
-                            onClick = {}
-                        )
-                    }
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-            }
-
-            // ── Watch History Section ─────────────────────────────────────
-            if (HistoryManager.watchHistory.isNotEmpty()) {
-                item {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Text("Watch history", fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onBackground)
-                        TextButton(onClick = {}) {
-                            Text("View all", fontSize = 13.sp)
-                        }
-                    }
-                }
-                items(HistoryManager.watchHistory.take(5)) { video ->
-                    YouHistoryVideoRow(video = video, onClick = { onVideoClick(video) })
-                }
-            }
-
-            // ── Connected YouTube Playlists Section ──────────────────────────
-            item {
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Playlists", fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground)
-                    TextButton(onClick = {}) {
-                        Text("View all", fontSize = 13.sp)
-                    }
-                }
-
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    items(com.adzero.app.data.PlaylistManager.userPlaylists) { playlist ->
-                        Column(
+                        Box(
                             modifier = Modifier
-                                .width(150.dp)
-                                .clickable { }
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFF0000)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(90.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                            ) {
-                                AsyncImage(
-                                    model = playlist.thumbnailUrl,
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color.Black.copy(alpha = 0.6f))
-                                        .align(Alignment.BottomCenter)
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.PlaylistPlay, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                        Text("${playlist.itemCount} videos", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = playlist.title,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onBackground
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
                             )
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "AdZero User",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                            }
                             Text(
-                                text = if (playlist.isPrivate) "🔒 Private" else "Public",
-                                fontSize = 11.sp,
+                                text = "100% Ad-Free • Anonymous & Private",
+                                fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-            }
 
-            // ── Settings & More ───────────────────────────────────────────
-            item {
-                HorizontalDivider(
-                    modifier = Modifier.padding(top = 8.dp),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-                )
-                YouSettingsRow(icon = Icons.Outlined.Settings, label = "Settings", onClick = onSettingsClick)
-                YouSettingsRow(icon = Icons.Default.Shield, label = "Ad-Free Mode (Active 🛡️)", onClick = {})
-                YouSettingsRow(icon = Icons.Default.Help, label = "Help & feedback", onClick = {})
-                YouSettingsRow(icon = Icons.Outlined.Info, label = "About AdZero", onClick = {})
-            }
-
-            // ── Theme Switcher ────────────────────────────────────────────
-            item {
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                    Text("Appearance", fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground)
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        listOf(ThemeMode.SYSTEM, ThemeMode.DARK, ThemeMode.AMOLED, ThemeMode.LIGHT).forEach { mode ->
-                            val label = when (mode) {
-                                ThemeMode.SYSTEM -> "Device"
-                                ThemeMode.DARK -> "Dark"
-                                ThemeMode.AMOLED -> "AMOLED"
-                                ThemeMode.LIGHT -> "Light"
+                        // Theme Mode Button
+                        IconButton(
+                            onClick = {
+                                val nextTheme = when (currentTheme) {
+                                    ThemeMode.AMOLED, ThemeMode.DARK -> ThemeMode.LIGHT
+                                    else -> ThemeMode.AMOLED
+                                }
+                                onThemeChange(nextTheme)
                             }
-                            val isSelected = currentTheme == mode
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { onThemeChange(mode) },
-                                label = { Text(label, fontSize = 13.sp) }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DarkMode,
+                                contentDescription = "Toggle Theme",
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
                 }
+            }
+
+            // ── Watch History Section ──────────────────────────────────────────
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "History",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+
+                    TextButton(onClick = { showHistoryScreen = true }) {
+                        Text("View all", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
+                    }
+                }
+
+                val history = HistoryManager.watchHistory
+                if (history.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp)
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Videos you watch will show up here",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp
+                        )
+                    }
+                } else {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    ) {
+                        items(history) { video ->
+                            HistoryItemCard(video = video, onClick = { onVideoClick(video) })
+                        }
+                    }
+                }
+
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+
+            // ── Playlists & Saved Section ─────────────────────────────────────
+            item {
+                Text(
+                    text = "Playlists",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+
+            item {
+                ProfileOptionRow(
+                    icon = Icons.Outlined.FavoriteBorder,
+                    title = "Liked Videos",
+                    subtitle = "${PlaylistManager.likedVideosList.size} videos",
+                    onClick = {}
+                )
+            }
+
+            item {
+                ProfileOptionRow(
+                    icon = Icons.Outlined.WatchLater,
+                    title = "Watch Later",
+                    subtitle = "0 videos",
+                    onClick = {}
+                )
+            }
+
+            item {
+                ProfileOptionRow(
+                    icon = Icons.Outlined.Download,
+                    title = "Downloads",
+                    subtitle = "0 videos",
+                    onClick = {}
+                )
+            }
+
+            item {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+
+            // ── Account & Settings Options ─────────────────────────────────────
+            item {
+                ProfileOptionRow(
+                    icon = Icons.Outlined.Settings,
+                    title = "Settings",
+                    subtitle = "Ad Blocking, SponsorBlock & Playback",
+                    onClick = onSettingsClick
+                )
+            }
+
+            item {
+                ProfileOptionRow(
+                    icon = Icons.Outlined.HelpOutline,
+                    title = "Help & Feedback",
+                    subtitle = "AdZero 4.0",
+                    onClick = {}
+                )
             }
         }
     }
 }
 
 @Composable
-private fun YouQuickAccessCard(
+fun ProfileOptionRow(
     icon: ImageVector,
-    label: String,
-    thumbnail: String?,
+    title: String,
+    subtitle: String,
     onClick: () -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier
-            .width(160.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .fillMaxWidth()
             .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(90.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (thumbnail != null) {
-                AsyncImage(
-                    model = thumbnail,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                    contentScale = ContentScale.Crop
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.35f))
-                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                )
-            }
-            Icon(imageVector = icon, contentDescription = label,
-                tint = if (thumbnail != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(28.dp))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(24.dp)
+        )
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(20.dp)
         )
     }
 }
 
 @Composable
-private fun YouHistoryVideoRow(video: Video, onClick: () -> Unit) {
-    Row(
+fun HistoryItemCard(
+    video: Video,
+    onClick: () -> Unit
+) {
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .width(150.dp)
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.width(120.dp).height(68.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(84.dp)
+                .clip(RoundedCornerShape(10.dp))
+        ) {
             AsyncImage(
                 model = video.thumbnailUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                contentDescription = video.title,
+                modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+
             if (video.duration.isNotBlank()) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(4.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color.Black.copy(alpha = 0.85f))
-                        .padding(horizontal = 3.dp, vertical = 1.dp)
+                        .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    Text(video.duration, color = Color.White, fontSize = 10.sp)
+                    Text(
+                        text = video.duration,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = video.title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Normal,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onBackground,
-                lineHeight = 17.sp
-            )
-            Text(
-                text = video.channelName,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        IconButton(onClick = {}, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Default.MoreVert, null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-        }
-    }
-}
 
-@Composable
-private fun YouSettingsRow(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Icon(imageVector = icon, contentDescription = label,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
-        Text(text = label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = video.title,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Text(
+            text = video.channelName,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

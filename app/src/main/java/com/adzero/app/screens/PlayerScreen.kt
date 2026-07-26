@@ -77,6 +77,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -209,11 +210,27 @@ fun PlayerScreen(
     val okHttpClient = remember { App.okHttpClient }
     val exoPlayer = remember { GlobalPlayerManager.getPlayer(context) }
     
+    var isBuffering by remember { mutableStateOf(false) }
+
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_READY) totalDuration = exoPlayer.duration
-                if (state == Player.STATE_ENDED) isPlaying = false
+                when (state) {
+                    Player.STATE_READY -> {
+                        totalDuration = exoPlayer.duration
+                        isBuffering = false
+                    }
+                    Player.STATE_BUFFERING -> {
+                        isBuffering = true
+                    }
+                    Player.STATE_ENDED -> {
+                        isPlaying = false
+                        isBuffering = false
+                    }
+                    Player.STATE_IDLE -> {
+                        isBuffering = false
+                    }
+                }
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 // Only mark as paused if the player is truly paused (not just buffering a new video).
@@ -226,6 +243,14 @@ fun PlayerScreen(
                 }
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                // If user specifically requested a quality, do NOT silently downgrade it!
+                if (userSelectedQuality) {
+                    // Just attempt to retry the same stream since it's the requested quality
+                    exoPlayer.prepare()
+                    exoPlayer.play()
+                    return
+                }
+                
                 // Automatic 0-pause recovery: fallback to progressive stream if YouTube CDN drops chunk
                 val fallback = extractedVideoStreams.firstOrNull { !it.isVideoOnly && it.url.isNotEmpty() }
                     ?: extractedVideoStreams.firstOrNull { it.url != selectedStream?.url }
@@ -241,13 +266,28 @@ fun PlayerScreen(
         onDispose { exoPlayer.removeListener(listener) }
     }
 
-    LaunchedEffect(exoPlayer, isPlaying) {
-        while (isPlaying) {
-            val pos = exoPlayer.currentPosition
-            if (pos >= 0L && pos != playbackPosition) {
-                playbackPosition = pos
-            }
+    // ── Anti-Stuck Hardware Kickstart (Preserves user's selected quality e.g. 2160p60) ──
+    LaunchedEffect(exoPlayer, selectedStream) {
+        var bufferingStuckTicks = 0
+        while (true) {
             delay(1000)
+            val pos = exoPlayer.currentPosition
+            val state = exoPlayer.playbackState
+            val isBufferingOrStuck = state == Player.STATE_BUFFERING || (!exoPlayer.isPlaying && exoPlayer.playWhenReady && state != Player.STATE_ENDED)
+            
+            if (isBufferingOrStuck) {
+                bufferingStuckTicks++
+                if (bufferingStuckTicks >= 15) { // Stuck for > 15 seconds (give 4K time to buffer)
+                    bufferingStuckTicks = 0
+                    exoPlayer.playWhenReady = true
+                    exoPlayer.play()
+                }
+            } else {
+                bufferingStuckTicks = 0
+                if (pos >= 0L && pos != playbackPosition) {
+                    playbackPosition = pos
+                }
+            }
         }
     }
 
@@ -257,8 +297,8 @@ fun PlayerScreen(
                                 video.isLive
 
         val hlsStream = if (isRealLiveContent) info.hlsUrl?.let { VideoStream(it, "LIVE", isHls = true) } else null
-        val progressive = info.videoStreams?.map { VideoStream(it.content ?: "", it.resolution ?: "360p", isVideoOnly = false) } ?: emptyList()
-        val vOnly = info.videoOnlyStreams?.map { VideoStream(it.content ?: "", it.resolution ?: "unknown", isVideoOnly = true) } ?: emptyList()
+        val progressive = info.videoStreams?.map { VideoStream(it.content ?: "", it.resolution ?: "360p", format = it.format?.name?.lowercase() ?: "mp4", isVideoOnly = false) } ?: emptyList()
+        val vOnly = info.videoOnlyStreams?.map { VideoStream(it.content ?: "", it.resolution ?: "unknown", format = it.format?.name?.lowercase() ?: "mp4", isVideoOnly = true) } ?: emptyList()
         val audio = info.audioStreams?.mapIndexed { index, audioStream ->
             // Determine if this is the original/default track using NewPipe's audioTrackType
             // audioTrackType: null or "ORIGINAL" = original, "DUBBED" = dubbed, "DESCRIPTIVE" = audio description
@@ -287,6 +327,7 @@ fun PlayerScreen(
             VideoStream(
                 url = audioStream.content ?: "",
                 quality = "$baseName$suffix",  // quality used internally for matching
+                format = audioStream.format?.name?.lowercase() ?: "m4a", // Store format to match with video later (webm vs m4a)
                 isVideoOnly = false,
                 displayName = fullDisplayName,
                 isOriginalTrack = isOriginal
@@ -315,13 +356,22 @@ fun PlayerScreen(
             extractedVideoStreams = (if (hlsStream != null) listOf(hlsStream) else emptyList()) + progressive + vOnly
             extractedAudioStreams = audio
 
-            // Only auto-select quality if user hasn't manually chosen one for this video
+            // Apply user's saved global quality preference across all videos
+            val globalPref = com.adzero.app.data.PlayerQualityManager.preferredQuality
+            if (globalPref != "Auto") {
+                val matchedStream = com.adzero.app.data.PlayerQualityManager.findBestMatchingStream(extractedVideoStreams, globalPref)
+                if (matchedStream != null) {
+                    selectedStream = matchedStream
+                    userSelectedQuality = true
+                    playerStatusText = "${matchedStream.quality}"
+                }
+            }
+
+            // Fall back to Auto Quality if no saved preference or stream unavailable
             if (selectedStream == null || !userSelectedQuality) {
                 val autoSelected = if (isRealLiveContent) {
                     hlsStream ?: allVideoStreams.firstOrNull()
                 } else {
-                    // Auto quality: prefer progressive (audio+video combined) streams;
-                    // fall back to video-only if none available.
                     val hasProgressiveStreams = progressive.any { it.url.isNotBlank() }
                     val candidateStreams = if (hasProgressiveStreams) progressive else vOnly
                     selectBestAutoQuality(candidateStreams, bandwidthKbps, isWifi)
@@ -388,7 +438,7 @@ fun PlayerScreen(
         extractedAudioStreams = emptyList()
         lastLoadedStreamUrl = null
         activeAudioUrl = null
-        userSelectedQuality = false  // reset so auto-quality runs fresh for every new video
+        userSelectedQuality = (com.adzero.app.data.PlayerQualityManager.preferredQuality != "Auto")
 
         val normalizedId = ExtractionManager.normalizeId(video.id)
         val cached = ExtractionManager.extractionState.value
@@ -411,8 +461,9 @@ fun PlayerScreen(
 
     LaunchedEffect(selectedStream, selectedAudioStream, playbackSpeed, video.id) {
         selectedStream?.let { stream ->
+            val currentAudioStream = selectedAudioStream // Capture into local val for smart casting
             val currentSpeed = exoPlayer.playbackParameters.speed
-            val currentAudioUrl = selectedAudioStream?.url
+            val currentAudioUrl = currentAudioStream?.url
 
             // Guard: skip reload if nothing changed (fixed: removed broken `activeAudioUrl != null` check)
             val isAlreadyLoaded = lastLoadedStreamUrl == stream.url
@@ -433,28 +484,38 @@ fun PlayerScreen(
             activeAudioUrl = currentAudioUrl
             lastPlayedVideoId = video.id
 
-            // Build OkHttp data source factory with YouTube-required headers
-            val dsFactory = OkHttpDataSource.Factory(App.okHttpClient)
-                .setUserAgent("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+            // Build clean OkHttp data source factory with standard headers (no Origin CORS header)
+            val httpDsFactory = OkHttpDataSource.Factory(App.okHttpClient)
+                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
                 .setDefaultRequestProperties(mapOf(
-                    "Origin" to "https://www.youtube.com",
                     "Referer" to "https://www.youtube.com/"
                 ))
 
+            val upstreamDsFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDsFactory)
+            val mediaSourceFactory = DefaultMediaSourceFactory(upstreamDsFactory)
+
             val videoSource = if (stream.isHls) {
-                HlsMediaSource.Factory(dsFactory).createMediaSource(MediaItem.fromUri(stream.url))
+                HlsMediaSource.Factory(upstreamDsFactory).createMediaSource(MediaItem.fromUri(stream.url))
             } else {
-                ProgressiveMediaSource.Factory(dsFactory)
-                    .createMediaSource(MediaItem.fromUri(stream.url))
+                mediaSourceFactory.createMediaSource(MediaItem.fromUri(stream.url))
             }
             
-            val chosenAudio = selectedAudioStream ?: extractedAudioStreams.firstOrNull()
+            val fallbackAudio = currentAudioStream ?: extractedAudioStreams.firstOrNull { it.isOriginalTrack } ?: extractedAudioStreams.firstOrNull()
+            
+            // CRITICAL FIX: Prevent ExoPlayer from freezing at 00:02.
+            // If you mix WebM video (2160p) with MP4/M4A audio in MergingMediaSource, the timestamps drift and ExoPlayer halts playback.
+            val chosenAudio = if (stream.isVideoOnly) {
+                extractedAudioStreams.firstOrNull { 
+                    (currentAudioStream == null || it.quality == currentAudioStream.quality) && 
+                    it.format == stream.format 
+                } ?: extractedAudioStreams.firstOrNull { it.format == stream.format } ?: fallbackAudio
+            } else {
+                fallbackAudio
+            }
             val finalSource = if (!stream.isHls && stream.isVideoOnly && chosenAudio != null
                 && chosenAudio.url.isNotBlank()) {
-                // Use adjustPeriodTimeOffsets=false to prevent duration-mismatch freeze
-                val audioSource = ProgressiveMediaSource.Factory(dsFactory)
-                    .createMediaSource(MediaItem.fromUri(chosenAudio.url))
-                MergingMediaSource(false, videoSource, audioSource)
+                val audioSource = mediaSourceFactory.createMediaSource(MediaItem.fromUri(chosenAudio.url))
+                MergingMediaSource(true, true, videoSource, audioSource)
             } else {
                 videoSource
             }
@@ -540,7 +601,7 @@ fun PlayerScreen(
                         ) { onExpand() }
                 )
 
-                // 1. Center-Left Dark Circle Play/Pause Button (Exact Image Matched)
+                // 1. Center-Left Dark Circle Play/Pause Button
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
@@ -1151,6 +1212,7 @@ fun PlayerScreen(
                 options = qualityOptions,
                 onSelect = { selectedOption ->
                     if (selectedOption.startsWith("Auto")) {
+                        com.adzero.app.data.PlayerQualityManager.setPreferredQuality(context, "Auto")
                         userSelectedQuality = false // Reset to auto mode
                         val progressive = extractedVideoStreams.filter { !it.isVideoOnly }
                         val vOnly = extractedVideoStreams.filter { it.isVideoOnly }
@@ -1164,6 +1226,7 @@ fun PlayerScreen(
                         
                         selectedStream = selectBestAutoQuality(candidateStreams, bw, wifi)
                     } else {
+                        com.adzero.app.data.PlayerQualityManager.setPreferredQuality(context, selectedOption)
                         userSelectedQuality = true // Lock to manual selection
                         selectedStream = extractedVideoStreams.find { it.quality == selectedOption }
                     }

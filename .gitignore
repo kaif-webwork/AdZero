@@ -12,5 +12,7 @@
 /captures
 .externalNativeBuild
 .cxx
-local.properties
 .artifacts/
+*.hprof
+build_output.txt
+*.log

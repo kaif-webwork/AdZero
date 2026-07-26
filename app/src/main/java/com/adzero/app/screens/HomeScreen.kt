@@ -266,7 +266,7 @@ fun HomeScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFF000000),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             // ── YouTube 2026 Top Bar ──────────────────────────────────────
             TopAppBar(

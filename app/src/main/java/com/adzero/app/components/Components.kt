@@ -14,18 +14,23 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.PlaylistAdd
+import androidx.compose.material.icons.outlined.RemoveCircleOutline
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlin.OptIn
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -36,7 +41,11 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.adzero.app.Constants
 import com.adzero.app.models.Video
-import com.airbnb.lottie.compose.*
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.LottieConstants
+import com.airbnb.lottie.compose.animateLottieCompositionAsState
+import com.airbnb.lottie.compose.rememberLottieComposition
 
 @Composable
 fun YouTubeLoading(modifier: Modifier = Modifier) {
@@ -50,7 +59,7 @@ fun YouTubeLoading(modifier: Modifier = Modifier) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// YouTube 2026 Category Chips with animated sliding indicator
+// YouTube 2026 Category Chips (Dynamic Light/Dark Theme Adaption)
 // ─────────────────────────────────────────────────────────────────────────
 @Composable
 fun CategoryChips(
@@ -68,13 +77,13 @@ fun CategoryChips(
     ) {
         Constants.CATEGORIES.forEach { category ->
             val isSelected = category == selectedCategory
-            val bgColor by animateColorAsState(
+            val chipBg by animateColorAsState(
                 targetValue = if (isSelected) MaterialTheme.colorScheme.onBackground
                               else MaterialTheme.colorScheme.surfaceVariant,
                 animationSpec = tween(200),
                 label = "chipBg"
             )
-            val textColor by animateColorAsState(
+            val chipTextColor by animateColorAsState(
                 targetValue = if (isSelected) MaterialTheme.colorScheme.background
                               else MaterialTheme.colorScheme.onBackground,
                 animationSpec = tween(200),
@@ -84,15 +93,12 @@ fun CategoryChips(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(
-                        if (isSelected) Brush.verticalGradient(listOf(Color.White, Color(0xFFE0E0E0)))
-                        else Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.14f), Color.White.copy(alpha = 0.04f)))
-                    )
+                    .background(chipBg)
                     .border(
                         BorderStroke(
                             1.dp,
-                            if (isSelected) SolidColor(Color.White)
-                            else Brush.horizontalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.White.copy(alpha = 0.08f)))
+                            if (isSelected) MaterialTheme.colorScheme.onBackground
+                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
                         ),
                         RoundedCornerShape(50)
                     )
@@ -101,7 +107,7 @@ fun CategoryChips(
             ) {
                 Text(
                     text = category,
-                    color = if (isSelected) Color.Black else Color.White,
+                    color = chipTextColor,
                     fontSize = 13.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                 )
@@ -111,7 +117,7 @@ fun CategoryChips(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// YouTube 2026 Liquid Glass VideoCard with 3-dot bottom sheet menu
+// YouTube 2026 Video Card (Dynamic Theme Card Background & High-Contrast Text)
 // ─────────────────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,21 +134,11 @@ fun VideoCard(
             .fillMaxWidth()
             .padding(horizontal = 10.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(22.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.03f))
-                )
-            )
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .border(
                 BorderStroke(
-                    1.5.dp,
-                    Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.45f),
-                            Color.White.copy(alpha = 0.08f),
-                            Color.White.copy(alpha = 0.25f)
-                        )
-                    )
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
                 ),
                 RoundedCornerShape(22.dp)
             )
@@ -203,7 +199,7 @@ fun VideoCard(
             }
         }
 
-        // Details Row — exactly like YouTube 2026
+        // Details Row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -227,7 +223,7 @@ fun VideoCard(
                     text = video.title,
                     color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Normal,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 19.sp
@@ -258,13 +254,15 @@ fun VideoCard(
                         if (video.views.isNotBlank()) append(" • ${video.views}")
                         if (video.uploadDate.isNotBlank()) append(" • ${video.uploadDate}")
                     }
-                    Text(
-                        text = meta,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    if (meta.isNotEmpty()) {
+                        Text(
+                            text = meta,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
@@ -290,7 +288,6 @@ fun VideoCard(
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
         ) {
-            // Compact video preview in the sheet header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -368,182 +365,150 @@ fun ShortsShelf(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // YouTube Shorts logo-style header
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = "Shorts",
-                tint = Color.Red,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = "Shorts",
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(onClick = onSeeAll) {
-                Text("See all", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.Red),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Text(
+                    text = "Shorts",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
             }
         }
 
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
         ) {
-            items(shorts) { video ->
-                ShortCard(video = video, onClick = { onShortClick(video) })
-            }
-        }
-    }
-}
-
-@Composable
-fun ShortCard(video: Video, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .width(120.dp)
-            .height(210.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { onClick() }
-    ) {
-        val context = LocalContext.current
-        val thumbModel = remember(video.id, video.thumbnailUrl) {
-            val primaryUrl = if (video.thumbnailUrl.startsWith("//")) "https:${video.thumbnailUrl}" else video.thumbnailUrl
-            coil.request.ImageRequest.Builder(context)
-                .data(primaryUrl)
-                .crossfade(true)
-                .build()
-        }
-
-        AsyncImage(
-            model = thumbModel,
-            contentDescription = video.title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)),
-                        startY = 120f
+            items(shorts, key = { "short_${it.id}" }) { short ->
+                Box(
+                    modifier = Modifier
+                        .width(140.dp)
+                        .height(240.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onShortClick(short) }
+                ) {
+                    AsyncImage(
+                        model = short.thumbnailUrl,
+                        contentDescription = short.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
-                )
-        )
-        // Duration badge
-        if (video.duration.isNotBlank()) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color.Black.copy(alpha = 0.8f))
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-            ) {
-                Text(video.duration, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-            }
-        }
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(8.dp)
-        ) {
-            Text(
-                text = video.title,
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 15.sp
-            )
-            if (video.views.isNotBlank()) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(text = video.views, color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
+                                    startY = 200f
+                                )
+                            )
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = short.title,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (short.views.isNotBlank()) {
+                            Text(
+                                text = short.views,
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Empty State & Skeleton Loader
+// Skeleton Loader for initial feed loading
 // ─────────────────────────────────────────────────────────────────────────
-@Composable
-fun EmptyStateView(
-    icon: ImageVector,
-    title: String,
-    description: String,
-    onAction: (() -> Unit)? = null,
-    actionText: String = "Retry"
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(imageVector = icon, contentDescription = title,
-                modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(text = title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(text = description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3)
-        if (onAction != null) {
-            Spacer(modifier = Modifier.height(20.dp))
-            Button(onClick = onAction, shape = RoundedCornerShape(20.dp)) {
-                Text(text = actionText, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
 @Composable
 fun SkeletonLoader() {
-    val transition = rememberInfiniteTransition(label = "shimmer")
-    val translateAnim by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1000f,
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.15f,
+        targetValue = 0.45f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
+            animation = tween(700),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
         ),
-        label = "shimmerAnim"
+        label = "alpha"
     )
-    val shimmerColors = listOf(
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.2f),
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-    )
-    val brush = Brush.linearGradient(
-        colors = shimmerColors,
-        start = Offset.Zero,
-        end = Offset(x = translateAnim, y = translateAnim)
-    )
-    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-        Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(brush))
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        )
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(brush))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(modifier = Modifier.fillMaxWidth(0.9f).height(14.dp).clip(RoundedCornerShape(4.dp)).background(brush))
-                Box(modifier = Modifier.fillMaxWidth(0.5f).height(12.dp).clip(RoundedCornerShape(4.dp)).background(brush))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .height(14.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.45f)
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                )
             }
         }
     }

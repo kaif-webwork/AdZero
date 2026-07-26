@@ -182,7 +182,8 @@ fun MainAppNavigation(
                                 },
                                 onChannelClick = { channelName ->
                                     navController.navigate(Screen.Channel.createRoute(channelName))
-                                }
+                                },
+                                onSearchClick = { navController.navigate(Screen.Search.route) }
                             )
                         }
                         composable(Screen.Profile.route) {
