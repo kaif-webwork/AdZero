@@ -16,12 +16,36 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.RequestBody.Companion.toRequestBody
 
-class App : Application() {
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
+import coil.request.CachePolicy
+
+class App : Application(), ImageLoaderFactory {
 
     companion object {
         val isExtractorInitialized = AtomicBoolean(false)
         lateinit var okHttpClient: OkHttpClient
             private set
+    }
+
+    override fun newImageLoader(): ImageLoader {
+        return ImageLoader.Builder(this)
+            .memoryCache {
+                MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(100L * 1024L * 1024L) // 100 MB disk cache
+                    .build()
+            }
+            .respectCacheHeaders(false)
+            .crossfade(true)
+            .build()
     }
 
     override fun onCreate() {

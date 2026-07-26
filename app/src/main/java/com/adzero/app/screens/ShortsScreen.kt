@@ -91,7 +91,7 @@ fun ShortsScreen(
                     ?.filterIsInstance<StreamInfoItem>()
                     ?.map { it.toVideo() }?.shuffled() ?: emptyList()
 
-                val baseItems = if (fetched.isNotEmpty()) fetched else createFallbackCategoryVideos("shorts").shuffled()
+                val baseItems = fetched
 
                 // Ensure unique IDs so infinite scrolling never stalls or crashes
                 val newItems = baseItems.mapIndexed { idx, v ->
@@ -99,21 +99,17 @@ fun ShortsScreen(
                 }
 
                 withContext(Dispatchers.Main) {
-                    shortsList = shortsList + newItems
-                    isMoreLoading = false
-
-                    // Pre-extract newly loaded shorts in background
-                    newItems.take(6).forEach { video ->
-                        com.adzero.app.data.ExtractionManager.startExtraction(video, isSpeculative = true)
+                    if (newItems.isNotEmpty()) {
+                        shortsList = shortsList + newItems
+                        newItems.take(6).forEach { video ->
+                            com.adzero.app.data.ExtractionManager.startExtraction(video, isSpeculative = true)
+                        }
                     }
+                    isMoreLoading = false
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
-                    val fallback = createFallbackCategoryVideos("shorts").shuffled().mapIndexed { idx, v ->
-                        v.copy(id = "${v.id}_fallback_${shortsList.size + idx}")
-                    }
-                    shortsList = shortsList + fallback
                     isMoreLoading = false
                 }
             }
@@ -148,30 +144,23 @@ fun ShortsScreen(
                     }
                 }
 
-                val items = if (initialList.isNotEmpty()) {
-                    initialList.distinctBy { it.id }.shuffled()
-                } else {
-                    createFallbackCategoryVideos("shorts")
-                }
+                val items = initialList.distinctBy { it.id }.shuffled()
                 
                 withContext(Dispatchers.Main) {
-                    shortsList = items
-                    isLoading = false
-                    com.adzero.app.data.FastContentStore.saveFeed(context, "Shorts", items)
-                    // Start speculative pre-extraction for instant loading
-                    items.take(8).forEach { video ->
-                        com.adzero.app.data.ExtractionManager.startExtraction(video, isSpeculative = true)
+                    if (items.isNotEmpty()) {
+                        shortsList = items
+                        isLoading = false
+                        com.adzero.app.data.FastContentStore.saveFeed(context, "Shorts", items)
+                        // Start speculative pre-extraction for instant loading
+                        items.take(8).forEach { video ->
+                            com.adzero.app.data.ExtractionManager.startExtraction(video, isSpeculative = true)
+                        }
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
-                    val fallback = createFallbackCategoryVideos("shorts")
-                    shortsList = fallback
                     isLoading = false
-                    fallback.take(8).forEach { video ->
-                        com.adzero.app.data.ExtractionManager.startExtraction(video, isSpeculative = true)
-                    }
                 }
             }
         }
@@ -365,30 +354,23 @@ fun ShortsItem(
                 }
             }
 
-            // 3. Fast extraction with 400ms ultra-fast network resolution
+            // 3. Fast real stream extraction
             withContext(Dispatchers.IO) {
                 try {
                     val targetUrl = if (video.videoUrl.startsWith("http")) video.videoUrl else "https://www.youtube.com/watch?v=${video.id}"
-                    val info = kotlinx.coroutines.withTimeoutOrNull(400) { StreamInfo.getInfo(targetUrl) }
+                    val info = try { StreamInfo.getInfo(targetUrl) } catch(e: Exception) { null }
                     val optimalUrl = if (info != null) com.adzero.app.data.ExtractionManager.getOptimalStreamForNetwork(context, info) else null
 
-                    val finalUrl = optimalUrl ?: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
-
-                    withContext(Dispatchers.Main) {
-                        streamUrl = finalUrl
-                        exoPlayer.setMediaItem(MediaItem.fromUri(finalUrl))
-                        exoPlayer.prepare()
-                        exoPlayer.play()
+                    if (optimalUrl != null) {
+                        withContext(Dispatchers.Main) {
+                            streamUrl = optimalUrl
+                            exoPlayer.setMediaItem(MediaItem.fromUri(optimalUrl))
+                            exoPlayer.prepare()
+                            exoPlayer.play()
+                        }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    val fallbackUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
-                    withContext(Dispatchers.Main) {
-                        streamUrl = fallbackUrl
-                        exoPlayer.setMediaItem(MediaItem.fromUri(fallbackUrl))
-                        exoPlayer.prepare()
-                        exoPlayer.play()
-                    }
                 }
             }
         } else {

@@ -91,21 +91,6 @@ object RealAccountSyncManager {
                 }
             }
 
-            // Always ensure real playlists exist
-            if (PlaylistManager.userPlaylists.isEmpty() || PlaylistManager.userPlaylists.all { it.itemCount == 0 }) {
-                withContext(Dispatchers.Main) {
-                    PlaylistManager.userPlaylists.clear()
-                    PlaylistManager.userPlaylists.addAll(
-                        listOf(
-                            UserPlaylist("pl_1", "Liked Videos (MicroG)", 142, "https://picsum.photos/seed/liked_vd/400/225", true),
-                            UserPlaylist("pl_2", "Watch Later (MicroG)", 28, "https://picsum.photos/seed/wtch_ltr/400/225", true),
-                            UserPlaylist("pl_3", "My Favorite Music & Lofi", 54, "https://picsum.photos/seed/fav_msc/400/225", false),
-                            UserPlaylist("pl_4", "Trending Tech & Gaming 2026", 36, "https://picsum.photos/seed/trnd_tch/400/225", false)
-                        )
-                    )
-                }
-            }
-
             return@withContext channelItem != null
         } catch (e: Exception) {
             e.printStackTrace()

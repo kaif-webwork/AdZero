@@ -1,6 +1,5 @@
 package com.adzero.app.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -34,8 +33,10 @@ import com.adzero.app.data.ExtractionManager
 import com.adzero.app.models.Video
 import com.adzero.app.models.toVideo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.kiosk.KioskInfo
 import org.schabi.newpipe.extractor.search.SearchInfo
@@ -60,6 +61,10 @@ fun HomeScreen(
     var isMoreLoading by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // Per-category cursor for true next-page pagination (NewPipe Page token)
+    val nextPageMap = remember { mutableStateMapOf<String, Page?>() }
+    // Topic used for the last search, so loadMore appends the right category
+    var lastSearchTopic by remember { mutableStateOf("") }
 
     fun refreshHomeFeed() {
         if (isRefreshing) return
@@ -68,14 +73,9 @@ fun HomeScreen(
             withContext(Dispatchers.IO) {
                 try {
                     val service = ServiceList.YouTube
-                    val randomTopics = listOf(
-                        "Trending India 2026", "New Music Videos", "Tech Reviews", 
-                        "Gaming Highlights 2026", "Standup Comedy Special", "Top Podcasts India",
-                        "Cricket Highlights", "Unboxing Gadgets", "Lofi Beats 24/7",
-                        "Movie Trailers 2026", "Latest News Headlines", "Car Reviews"
-                    )
-                    val topic1 = randomTopics.random()
-                    val topic2 = (randomTopics - topic1).random()
+                    val topics = getCategorySearchQueries(selectedCategory)
+                    val topic1 = topics.random()
+                    val topic2 = (topics - topic1).firstOrNull() ?: topic1
                     
                     val handler1 = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(topic1, emptyList(), "")
                     val handler2 = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(topic2, emptyList(), "")
@@ -84,16 +84,22 @@ fun HomeScreen(
                     val res2 = try { SearchInfo.getInfo(service, handler2).relatedItems } catch(e: Exception) { emptyList() }
                     
                     val combined = (res1 + res2).filterIsInstance<StreamInfoItem>().map { it.toVideo() }.shuffled()
-                    val freshVideos = if (combined.isNotEmpty()) combined else createFallbackCategoryVideos(selectedCategory).shuffled()
+                    val filtered = if (selectedCategory.equals("Live", ignoreCase = true)) {
+                        combined.filter { it.isLive || it.duration.equals("LIVE", ignoreCase = true) }
+                    } else combined
+
+                    val freshVideos = filtered
                     
                     withContext(Dispatchers.Main) {
-                        videosState = freshVideos
+                        if (freshVideos.isNotEmpty()) {
+                            videosState = freshVideos
+                            com.adzero.app.data.FastContentStore.saveFeed(context, selectedCategory, freshVideos)
+                        }
                         isRefreshing = false
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
                     withContext(Dispatchers.Main) {
-                        videosState = createFallbackCategoryVideos(selectedCategory).shuffled()
                         isRefreshing = false
                     }
                 }
@@ -101,43 +107,78 @@ fun HomeScreen(
         }
     }
 
+    // ── Load more using NextPage cursor (true pagination, no duplicates) ─────
     fun loadMoreVideos() {
         if (isMoreLoading) return
         isMoreLoading = true
         scope.launch(Dispatchers.IO) {
             try {
                 val service = ServiceList.YouTube
-                val randomTopics = listOf(
-                    "Trending India", "New Music Videos", "Tech Reviews", "Gaming 2026", 
-                    "Standup Comedy", "Podcasts", "Cricket", "Gadgets", "Lofi Music", "World News"
-                )
-                val topic = if (selectedCategory == "All") randomTopics.random() else "$selectedCategory trending"
-                val handler = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(topic, emptyList(), "")
-                val res = try { SearchInfo.getInfo(service, handler).relatedItems } catch(e: Exception) { emptyList() }
-                val fetched = res.filterIsInstance<StreamInfoItem>().map { it.toVideo() }.shuffled()
-                val newItems = if (fetched.isNotEmpty()) fetched else createFallbackCategoryVideos(selectedCategory).shuffled()
+                val existingIds = videosState.map { it.id }.toSet()
+                var newItems: List<Video> = emptyList()
+
+                val storedPage = nextPageMap[selectedCategory]
+                if (storedPage != null && lastSearchTopic.isNotBlank()) {
+                    // ✔ True next-page: continue the same search with cursor
+                    try {
+                        val handler = YoutubeSearchQueryHandlerFactory.getInstance()
+                            .fromQuery(lastSearchTopic, emptyList(), "")
+                        val moreInfo = SearchInfo.getMoreItems(service, handler, storedPage)
+                        newItems = moreInfo.items
+                            .filterIsInstance<StreamInfoItem>()
+                            .map { it.toVideo() }
+                            .filter { it.id !in existingIds }
+                        nextPageMap[selectedCategory] = moreInfo.nextPage
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                // Fallback: search next targeted query for this specific category
+                if (newItems.isEmpty()) {
+                    val catTopics = getCategorySearchQueries(selectedCategory)
+                    val topic = catTopics.random()
+                    lastSearchTopic = topic
+                    val handler = YoutubeSearchQueryHandlerFactory.getInstance()
+                        .fromQuery(topic, emptyList(), "")
+                    val res = try { SearchInfo.getInfo(service, handler) } catch (e: Exception) { null }
+                    val rawFetched = (res?.relatedItems ?: emptyList())
+                        .filterIsInstance<StreamInfoItem>()
+                        .map { it.toVideo() }
+                    
+                    val filtered = if (selectedCategory.equals("Live", ignoreCase = true)) {
+                        rawFetched.filter { it.isLive || it.duration.equals("LIVE", ignoreCase = true) }
+                    } else rawFetched
+
+                    newItems = filtered.filter { it.id !in existingIds }
+                    if (res?.nextPage != null) nextPageMap[selectedCategory] = res.nextPage
+                }
+
+                val appended = newItems
 
                 withContext(Dispatchers.Main) {
-                    val existingIds = videosState.map { it.id }.toSet()
-                    val uniqueNew = newItems.filter { it.id !in existingIds }
-                    videosState = videosState + if (uniqueNew.isNotEmpty()) uniqueNew else newItems
+                    if (appended.isNotEmpty()) {
+                        videosState = videosState + appended
+                        // Speculatively extract next batch
+                        appended.take(4).forEach { ExtractionManager.startExtraction(it, isSpeculative = true) }
+                    }
                     isMoreLoading = false
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
-                    videosState = videosState + createFallbackCategoryVideos(selectedCategory).shuffled()
                     isMoreLoading = false
                 }
             }
         }
     }
 
+    // Trigger load more when 6 items from the end (earlier prefetch = smoother scroll)
     val shouldLoadMore = remember {
         derivedStateOf {
             val totalItems = listState.layoutInfo.totalItemsCount
             val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            totalItems > 0 && lastVisibleItem >= totalItems - 3
+            totalItems > 0 && lastVisibleItem >= totalItems - 6
         }
     }
 
@@ -148,95 +189,80 @@ fun HomeScreen(
     }
 
     LaunchedEffect(selectedCategory) {
+        isLoading = true
+        videosState = emptyList() // Immediately clear old category videos to prevent showing wrong data
+        shortsState = emptyList()
+
         val fastCached = com.adzero.app.data.FastContentStore.getFeed(context, selectedCategory)
         val warmCached = com.adzero.app.data.WarmFeedCache.getFeed(selectedCategory)
         val initialFeed = if (fastCached.isNotEmpty()) fastCached else warmCached
         if (!initialFeed.isNullOrEmpty()) {
             videosState = initialFeed
             isLoading = false
-        } else {
-            isLoading = true
         }
 
         withContext(Dispatchers.IO) {
             try {
                 val service = ServiceList.YouTube
-                val items = if (selectedCategory == "For You 👤") {
-                    val subChannels = com.adzero.app.data.SubscriptionManager.subscribedChannels.keys.toList()
-                    val topic1 = if (subChannels.isNotEmpty()) "${subChannels.random()} videos" else "MicroG recommended videos"
-                    val topic2 = if (subChannels.size > 1) "${(subChannels - topic1).random()} latest" else "Trending top videos 2026"
+                val catQueries = getCategorySearchQueries(selectedCategory)
+                val q1 = catQueries.random()
+                val q2 = (catQueries - q1).firstOrNull() ?: q1
+                lastSearchTopic = q1
 
-                    val handler1 = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(topic1, emptyList(), "")
-                    val handler2 = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(topic2, emptyList(), "")
+                val handler1 = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(q1, emptyList(), "")
+                val handler2 = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(q2, emptyList(), "")
 
-                    val res1 = try { SearchInfo.getInfo(service, handler1).relatedItems } catch (e: Exception) { emptyList() }
-                    val res2 = try { SearchInfo.getInfo(service, handler2).relatedItems } catch (e: Exception) { emptyList() }
+                val search1Deferred = async { try { SearchInfo.getInfo(service, handler1) } catch(e: Exception) { null } }
+                val search2Deferred = async { try { SearchInfo.getInfo(service, handler2) } catch(e: Exception) { null } }
 
-                    (res1 + res2).filterIsInstance<StreamInfoItem>().map { it.toVideo() }.shuffled()
-                } else if (selectedCategory == "All") {
-                    val randomTopics = listOf(
-                        "Trending India", "New Music Videos 2026", "Tech Reviews", 
-                        "Gaming Highlights 2026", "Standup Comedy Special", "Top Podcasts India",
-                        "Cricket Highlights 2026", "Unboxing Gadgets", "Lofi Beats",
-                        "Movie Trailers 2026", "Latest News Headlines", "Car Reviews 2026"
-                    )
-                    val topic1 = randomTopics.random()
-                    val topic2 = (randomTopics - topic1).random()
-                    
-                    val handler1 = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(topic1, emptyList(), "")
-                    val handler2 = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(topic2, emptyList(), "")
-                    
-                    val res1 = try { SearchInfo.getInfo(service, handler1).relatedItems } catch(e: Exception) { emptyList() }
-                    val res2 = try { SearchInfo.getInfo(service, handler2).relatedItems } catch(e: Exception) { emptyList() }
-                    
-                    val combined = (res1 + res2).shuffled()
-                    if (combined.isEmpty()) {
-                        val extractor = service.kioskList.defaultKioskExtractor
-                        KioskInfo.getInfo(extractor).relatedItems.shuffled()
-                    } else {
-                        combined
-                    }
-                } else {
-                    val queryTerm = if (selectedCategory.equals("Live", ignoreCase = true)) "live stream" else selectedCategory
-                    val queryHandler = YoutubeSearchQueryHandlerFactory.getInstance()
-                        .fromQuery(queryTerm, emptyList(), "")
-                    SearchInfo.getInfo(service, queryHandler).relatedItems.shuffled()
+                val search1 = search1Deferred.await()
+                val search2 = search2Deferred.await()
+
+                if (search1?.nextPage != null) {
+                    nextPageMap[selectedCategory] = search1.nextPage
                 }
 
-                val fetchedVideos = items.filterIsInstance<StreamInfoItem>().map { it.toVideo() }
+                val res1 = search1?.relatedItems ?: emptyList()
+                val res2 = search2?.relatedItems ?: emptyList()
+
+                val combinedItems = (res1 + res2).filterIsInstance<StreamInfoItem>().map { it.toVideo() }.distinctBy { it.id }
+
                 val filteredVideos = if (selectedCategory.equals("Live", ignoreCase = true)) {
-                    fetchedVideos.filter { it.isLive || it.duration == "LIVE" }
+                    combinedItems.filter { it.isLive || it.duration.equals("LIVE", ignoreCase = true) }
                 } else {
-                    fetchedVideos
+                    combinedItems
                 }
-                val videos = if (filteredVideos.isEmpty()) createFallbackCategoryVideos(selectedCategory) else filteredVideos
 
                 val shortsQueryHandler = YoutubeSearchQueryHandlerFactory.getInstance()
                     .fromQuery("#shorts trending", emptyList(), "")
-                val shortsSearchInfo = SearchInfo.getInfo(service, shortsQueryHandler)
-                val fetchedShorts = shortsSearchInfo.relatedItems
+                val shortsSearchInfo = try { SearchInfo.getInfo(service, shortsQueryHandler) } catch(e: Exception) { null }
+                val fetchedShorts = (shortsSearchInfo?.relatedItems ?: emptyList())
                     .filterIsInstance<StreamInfoItem>()
                     .map { it.toVideo() }
                     .take(8)
-                val shorts = if (fetchedShorts.isEmpty()) createFallbackCategoryVideos("shorts").take(6) else fetchedShorts
 
                 withContext(Dispatchers.Main) {
-                    videosState = videos
-                    shortsState = shorts
-                    com.adzero.app.data.FastContentStore.saveFeed(context, selectedCategory, videos)
-                    videos.take(10).forEach { video ->
-                        ExtractionManager.startExtraction(video, isSpeculative = true)
+                    if (filteredVideos.isNotEmpty()) {
+                        videosState = filteredVideos
+                        com.adzero.app.data.FastContentStore.saveFeed(context, selectedCategory, filteredVideos)
+                        filteredVideos.take(10).forEach { video ->
+                            ExtractionManager.startExtraction(video, isSpeculative = true)
+                        }
                     }
+                    if (fetchedShorts.isNotEmpty()) {
+                        shortsState = fetchedShorts
+                    }
+                    isLoading = false
+                    isRefreshing = false
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
-                    videosState = createFallbackCategoryVideos(selectedCategory)
-                    shortsState = createFallbackCategoryVideos("shorts").take(6)
+                    isLoading = false
+                    isRefreshing = false
                 }
             }
         }
-        isLoading = false
     }
 
     Scaffold(
@@ -334,24 +360,22 @@ fun HomeScreen(
                     onCategorySelected = { selectedCategory = it }
                 )
 
-                if (isLoading && videosState.isEmpty()) {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                if (isLoading || videosState.isEmpty()) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 80.dp)
+                    ) {
                         items(5) { SkeletonLoader() }
                     }
                 } else {
-                    if (videosState.isEmpty() && !isLoading) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            YouTubeLoading()
-                        }
-                    } else {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 80.dp)
-                        ) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 80.dp)
+                    ) {
                             itemsIndexed(
                                 items = videosState,
-                                key = { index, video -> "${video.id}_$index" }
+                                key = { _, video -> video.id }
                             ) { index, video ->
                                 VideoCard(
                                     video = video,
@@ -361,6 +385,14 @@ fun HomeScreen(
                                     },
                                     onChannelClick = onChannelClick
                                 )
+
+                                // Speculative prefetch: extract next 3 videos as user scrolls past index 4+
+                                if (index >= 4) {
+                                    val nextBatch = videosState.drop(index + 1).take(3)
+                                    LaunchedEffect(index) {
+                                        nextBatch.forEach { ExtractionManager.startExtraction(it, isSpeculative = true) }
+                                    }
+                                }
 
                                 // Inject Shorts shelf after the 2nd video (YouTube-style)
                                 if (index == 1 && shortsState.isNotEmpty()) {
@@ -398,83 +430,55 @@ fun HomeScreen(
                 }
             }
         }
-    }
 }
 
-fun createFallbackCategoryVideos(category: String): List<Video> {
-    val items = when (category.lowercase()) {
+fun getCategorySearchQueries(category: String): List<String> {
+    return when (category.lowercase().replace("👤", "").trim()) {
         "gaming" -> listOf(
-            Triple("GTA 6 Official Gameplay Reveal & Secret Details", "Rockstar Games", "gta6_reveal"),
-            Triple("Minecraft 1.21 Update Showcase - Everything New!", "MumboJumbo", "mc_showcase"),
-            Triple("Elden Ring Shadow of the Erdtree Boss Guide", "VaatiVidya", "elden_guide"),
-            Triple("BGMI 3.2 Update New Features & Gameplay", "Mortal", "bgmi_gameplay"),
-            Triple("VALORANT Champions 2026 Grand Finals", "VALORANT Champions", "valorant_finals")
+            "GTA 6 gameplay official", "Minecraft 1.21 update gameplay", "Elden Ring Erdtree boss",
+            "BGMI 3.2 gameplay clutch", "VALORANT Champions 2026 highlights", "Techno Gamerz GTA V"
         )
         "music" -> listOf(
-            Triple("Lo-fi Beats to Relax / Study to 24/7", "Lofi Girl", "lofi_study"),
-            Triple("Arijit Singh Best Romantic Hits Live 2026", "T-Series", "arijit_romantic"),
-            Triple("Taylor Swift - The Eras Tour Live Performance", "Taylor Swift", "taylor_eras_live"),
-            Triple("Coke Studio Season 15 Full Episode 1", "Coke Studio", "coke_studio_s15"),
-            Triple("Coldplay - Yellow (Live in Tokyo 2026)", "Coldplay", "coldplay_yellow")
+            "New Music Video 2026", "Arijit Singh romantic hits live", "Coke Studio Season 15",
+            "Lofi beats to relax study 24/7", "Taylor Swift Eras tour live", "Top Bollywood songs 2026"
         )
         "live" -> listOf(
-            Triple("🔴 ISRO Gaganyaan Mission Launch Live Streaming", "ISRO Official", "isro_gaganyaan"),
-            Triple("🔴 Aaj Tak Live News 24x7 Stream", "Aaj Tak", "aajtak_news_live"),
-            Triple("🔴 Lofi Hip Hop Radio - Beats to Sleep to", "Lofi Girl", "lofi_sleep_radio"),
-            Triple("🔴 Techno Gamerz GTA V Live Gameplay", "Techno Gamerz", "techno_gta5_live"),
-            Triple("🔴 NASA Earth From Space Live HD Stream", "NASA", "nasa_earth_live")
+            "Live stream 24/7", "Aaj Tak Live News stream", "Lofi Hip Hop Radio Live",
+            "ISRO Launch Live Stream", "Techno Gamerz Live gameplay"
         )
         "podcasts" -> listOf(
-            Triple("The Ranveer Show #350 - AI Future & Tech Breakthroughs", "BeerBiceps", "beerbiceps_350"),
-            Triple("Joe Rogan Experience #2150 - Quantum Physics & Cosmos", "PowerfulJRE", "jre_2150"),
-            Triple("Raj Shamani Figuring Out Ep 120 - Building Startups", "Raj Shamani", "raj_startups"),
-            Triple("Lex Fridman Podcast #420 - Sam Altman on Future AI", "Lex Fridman", "lex_sam_altman"),
-            Triple("Prakhar ke Pravachan - Human Psychology Explained", "Prakhar ke Pravachan", "prakhar_psych")
+            "The Ranveer Show podcast", "Joe Rogan Experience podcast", "Raj Shamani Figuring Out episode",
+            "Lex Fridman podcast Sam Altman", "Prakhar ke Pravachan podcast"
         )
         "technology" -> listOf(
-            Triple("iPhone 16 Pro Max Unboxing & Real Review", "Marques Brownlee", "mkbhd_iphone16"),
-            Triple("Building a $5000 Ultimate Gaming PC Setup 2026", "Linus Tech Tips", "ltt_5k_pc"),
-            Triple("Android 15 Top 20 Secret Features You Didn't Know!", "Android Authority", "android15_secrets"),
-            Triple("Tesla Cybercab Full Self Driving Test Drive", "MKBHD", "cybercab_mkbhd"),
-            Triple("Google Gemini Pro 1.5 vs GPT-4o Full Comparison", "Fireship", "fireship_ai")
+            "MKBHD Smartphone Review 2026", "Linus Tech Tips PC build", "Android 15 features review",
+            "Tesla Cybercab review", "Google Gemini vs GPT-4o"
+        )
+        "education" -> listOf(
+            "Veritasium science experiment", "Kurzgesagt in a nutshell", "Physics Wallah lecture",
+            "Mohak Mangal documentary", "Khan Academy math science"
+        )
+        "movies" -> listOf(
+            "Official Movie Trailer 2026", "New Hindi Movie Teaser 2026", "Marvel Studios Official Trailer",
+            "Behind The Scenes Movie Making", "Top Action Movie Scenes"
+        )
+        "news" -> listOf(
+            "Aaj Tak Live News Today", "World News Headlines 2026", "NDTV India News Live",
+            "BBC News World Update", "Financial Markets News 2026"
         )
         "sports" -> listOf(
-            Triple("India vs Australia T20 World Cup Match Highlights", "Star Sports", "ind_aus_t20_hl"),
-            Triple("Real Madrid vs Barcelona El Clasico Goals 2026", "LaLiga", "el_clasico_2026"),
-            Triple("Virat Kohli Iconic 100 Run Knock Highlights", "BCCI", "kohli_100_hl")
+            "India vs Australia Cricket Highlights", "Real Madrid vs Barcelona El Clasico Goals",
+            "T20 World Cup Match Highlights", "Virat Kohli 100 Run Knock Highlights", "Formula 1 Grand Prix Highlights"
         )
-        "shorts" -> listOf(
-            Triple("How To Actually Make Viral Shorts", "Luc Boulch", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"),
-            Triple("3 Secret AI Tools You Must Try Today!", "Tech Burner", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"),
-            Triple("BGMI Clutch 1v4 Insane Gameplay Moment!", "Mortal", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"),
-            Triple("Top 5 Unbelievable Facts About Space 🚀", "GetsetflySCIENCE", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"),
-            Triple("Crazy Standup Comedy Joke 😂", "Samay Raina", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdown.mp4"),
-            Triple("Mind-blowing Magic Trick Exposed! ✨", "Sujan Zaveri", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4")
-        )
+        "for you" -> {
+            val subChannels = com.adzero.app.data.SubscriptionManager.subscribedChannels.keys.toList()
+            if (subChannels.isNotEmpty()) {
+                listOf("${subChannels.random()} videos", "${subChannels.last()} latest")
+            } else listOf("Trending India 2026", "Top Recommended Videos")
+        }
         else -> listOf(
-            Triple("Top 10 Mind-Blowing Discoveries of 2026", "Veritasium", "veritasium_discoveries"),
-            Triple("How India Built The World's Fastest Highway Network", "Mohak Mangal", "mohak_highways"),
-            Triple("Samay Raina Unfiltered Standup Comedy Special", "Samay Raina", "samay_special"),
-            Triple("24 Hours Surviving in a Secret Underground Bunker", "MrBeast", "mrbeast_bunker_24h"),
-            Triple("How Quantum Computers Will Change The World Forever", "Kurzgesagt", "kurzgesagt_quantum")
-        )
-    }
-
-    val isLiveCategory = category.equals("live", ignoreCase = true)
-
-    return items.mapIndexed { index, item ->
-        Video(
-            id = "fallback_${category.lowercase()}_$index",
-            title = item.first,
-            videoUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            thumbnailUrl = "https://picsum.photos/seed/${category.lowercase()}$index/640/360",
-            channelName = item.second,
-            channelAvatarUrl = "https://picsum.photos/seed/avatar_${item.third}/100/100",
-            duration = if (isLiveCategory) "LIVE" else "${(4..18).random()}:${(10..59).random()}",
-            views = "${(40..980).random()}K views",
-            uploadDate = if (isLiveCategory) "Started streaming" else "${(1..5).random()} days ago",
-            description = "Explore the best of ${item.first} on YouTube 2026.",
-            isLive = isLiveCategory
+            "Trending India 2026", "New Music Videos 2026", "Tech Reviews 2026",
+            "Gaming Highlights 2026", "Standup Comedy Special", "Top Podcasts 2026"
         )
     }
 }

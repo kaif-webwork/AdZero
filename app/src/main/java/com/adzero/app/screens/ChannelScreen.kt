@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -30,11 +31,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.adzero.app.components.YouTubeLoading
 import com.adzero.app.components.SkeletonLoader
 import com.adzero.app.components.VideoCard
+import com.adzero.app.data.ExtractionManager
 import com.adzero.app.models.Video
 import com.adzero.app.models.toVideo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.search.SearchInfo
@@ -55,7 +59,11 @@ fun ChannelScreen(
     var isGridView by remember { mutableStateOf(false) }
     var channelVideos by remember { mutableStateOf<List<Video>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    
+    var isMoreLoading by remember { mutableStateOf(false) }
+    var channelNextPage by remember { mutableStateOf<org.schabi.newpipe.extractor.Page?>(null) }
+    val channelListState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
     val tabs = listOf("Videos", "Shorts", "Playlists", "Community", "About")
 
     LaunchedEffect(channelName) {
@@ -72,7 +80,11 @@ fun ChannelScreen(
                 
                 withContext(Dispatchers.Main) {
                     channelVideos = items
+                    channelNextPage = searchInfo.nextPage
                     isLoading = false
+                    items.take(6).forEach { video ->
+                        ExtractionManager.startExtraction(video, isSpeculative = true)
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -80,6 +92,50 @@ fun ChannelScreen(
                     isLoading = false
                 }
             }
+        }
+    }
+
+    fun loadMoreChannelVideos() {
+        if (isMoreLoading || channelNextPage == null || channelName.isBlank()) return
+        isMoreLoading = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val service = ServiceList.YouTube
+                val queryHandler = YoutubeSearchQueryHandlerFactory.getInstance()
+                    .fromQuery(channelName, emptyList(), "")
+                val moreInfo = SearchInfo.getMoreItems(service, queryHandler, channelNextPage)
+                val existingIds = channelVideos.map { it.id }.toSet()
+                val newItems = moreInfo.items
+                    .filterIsInstance<StreamInfoItem>()
+                    .map { it.toVideo() }
+                    .filter { it.id !in existingIds }
+
+                withContext(Dispatchers.Main) {
+                    channelVideos = channelVideos + newItems
+                    channelNextPage = moreInfo.nextPage
+                    isMoreLoading = false
+                    newItems.take(4).forEach { video ->
+                        ExtractionManager.startExtraction(video, isSpeculative = true)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) { isMoreLoading = false }
+            }
+        }
+    }
+
+    val shouldLoadMoreChannel = remember {
+        derivedStateOf {
+            val totalItems = channelListState.layoutInfo.totalItemsCount
+            val lastVisibleItem = channelListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            totalItems > 0 && lastVisibleItem >= totalItems - 5
+        }
+    }
+
+    LaunchedEffect(shouldLoadMoreChannel.value) {
+        if (shouldLoadMoreChannel.value && !isLoading && !isMoreLoading && channelVideos.isNotEmpty()) {
+            loadMoreChannelVideos()
         }
     }
 
@@ -335,11 +391,25 @@ fun ChannelScreen(
                                     }
                                 } else {
                                     LazyColumn(
+                                        state = channelListState,
                                         modifier = Modifier.fillMaxSize(),
-                                        contentPadding = PaddingValues(bottom = 64.dp)
+                                        contentPadding = PaddingValues(bottom = 80.dp)
                                     ) {
-                                        items(channelVideos) { video ->
+                                        items(channelVideos, key = { it.id }) { video ->
                                             VideoCard(video = video, onClick = { onVideoClick(video) })
+                                        }
+
+                                        if (isMoreLoading) {
+                                            item {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(16.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    YouTubeLoading()
+                                                }
+                                            }
                                         }
                                     }
                                 }

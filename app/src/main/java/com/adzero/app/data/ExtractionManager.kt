@@ -43,8 +43,18 @@ object ExtractionManager {
             _extractionState.value = ExtractionResult.Loading(video)
         }
 
-        // Return if already being extracted
+        // Return if already being extracted, but attach listener if user requested it
         if (activeJobs.containsKey(normalizedId)) {
+            val runningJob = activeJobs[normalizedId]
+            if (!isSpeculative && runningJob != null) {
+                scope.launch {
+                    runningJob.join()
+                    val completedCache = extractionCache[normalizedId]
+                    if (completedCache != null && requestedVideos.contains(normalizedId)) {
+                        _extractionState.value = ExtractionResult.Success(normalizedId, completedCache.first, completedCache.second)
+                    }
+                }
+            }
             return
         }
 

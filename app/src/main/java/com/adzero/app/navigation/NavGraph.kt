@@ -42,7 +42,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.adzero.app.components.DraggablePlayerLayout
 import com.adzero.app.components.PlayerState
+import com.adzero.app.data.UpdateInfo
+import com.adzero.app.data.UpdateManager
 import com.adzero.app.models.Video
+import com.adzero.app.screens.HomeScreen
 import com.adzero.app.screens.*
 import com.adzero.app.theme.ThemeMode
 import kotlinx.coroutines.launch
@@ -87,6 +90,53 @@ fun MainAppNavigation(
 
     val bottomTabs = listOf(Tab.Home, Tab.Shorts, Tab.Subscriptions, Tab.Profile)
 
+    // Update Popup Logic
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(Unit) {
+        updateInfo = UpdateManager.checkForUpdates()
+    }
+
+    if (updateInfo != null) {
+        AlertDialog(
+            onDismissRequest = { updateInfo = null },
+            title = { Text("Update Available 🚀") },
+            text = {
+                Column {
+                    Text("A new version (${updateInfo?.versionName}) of AdZero is available.")
+                    if (!updateInfo?.releaseNotes.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "What's New:\n${updateInfo?.releaseNotes}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        UpdateManager.openDownloadPage(context, updateInfo?.downloadUrl ?: "")
+                        updateInfo = null
+                    }
+                ) {
+                    Text("Download Now")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { updateInfo = null }) {
+                    Text("Later")
+                }
+            },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = Color(0xFF1C1C22),
+            titleContentColor = Color.White,
+            textContentColor = Color.White.copy(alpha = 0.8f)
+        )
+    }
+
     DraggablePlayerLayout(
         state = playerDraggableState,
         mainContent = {
@@ -107,33 +157,20 @@ fun MainAppNavigation(
                                 .navigationBarsPadding(),
                             contentAlignment = Alignment.Center
                         ) {
-                            val infiniteTransition = rememberInfiniteTransition(label = "liquidAura")
-                            val animShift by infiniteTransition.animateFloat(
-                                initialValue = 0f,
-                                targetValue = 1f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(4000, easing = LinearEasing),
-                                    repeatMode = RepeatMode.Reverse
-                                ),
-                                label = "liquidAuraAnim"
-                            )
-
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth(0.9f)
-                                    .height(58.dp)
-                                    .offset(y = 12.dp)
-                                    .blur(26.dp)
+                                    .height(52.dp)
+                                    .offset(y = 8.dp)
                                     .background(
                                         Brush.horizontalGradient(
                                             colors = listOf(
-                                                Color(0xFF2E335A).copy(alpha = 0.5f),
-                                                Color(0xFF1C1C22).copy(alpha = 0.6f),
-                                                Color(0xFF2E335A).copy(alpha = 0.5f)
-                                            ),
-                                            startX = 0f,
-                                            endX = 1000f + (animShift * 200f)
-                                        )
+                                                Color(0xFF2E335A).copy(alpha = 0.25f),
+                                                Color(0xFF1C1C22).copy(alpha = 0.35f),
+                                                Color(0xFF2E335A).copy(alpha = 0.25f)
+                                            )
+                                        ),
+                                        shape = RoundedCornerShape(26.dp)
                                     )
                             )
 
@@ -309,24 +346,17 @@ private fun PureAppleLiquidGlassDock(
             val tabWidth = maxWidth / tabs.size
             val tabWidthPx = with(LocalDensity.current) { tabWidth.toPx() }
 
-            // ── 1. High-Contrast Frosted Liquid Backdrop Blur (40px Blur Radius) ─────
+            // ── 1. High-Contrast Translucent Backdrop Fill ────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(26.dp))
-                    .graphicsLayer {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                            renderEffect = android.graphics.RenderEffect
-                                .createBlurEffect(40f, 40f, android.graphics.Shader.TileMode.CLAMP)
-                                .asComposeRenderEffect()
-                        }
-                    }
                     .background(
                         Brush.verticalGradient(
                             listOf(
-                                Color.White.copy(alpha = 0.40f),
-                                Color.White.copy(alpha = 0.10f),
-                                Color.White.copy(alpha = 0.25f)
+                                Color.White.copy(alpha = 0.12f),
+                                Color.White.copy(alpha = 0.04f),
+                                Color.White.copy(alpha = 0.08f)
                             )
                         )
                     )

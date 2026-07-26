@@ -14,18 +14,23 @@ object GlobalPlayerManager {
     private var exoPlayer: ExoPlayer? = null
 
     /**
-     * Ultra-High Performance LoadControl configured to eliminate buffering completely (60s min buffer, 180s max buffer)
+     * LoadControl tuned for YouTube streaming:
+     * - minBuffer: 15s ensures smooth playback without excessive memory use
+     * - maxBuffer: 60s cap to prevent OOM on low-end devices
+     * - bufferForPlayback: 1500ms — enough to start stable playback (500ms was too low, caused instant stalls)
+     * - bufferForPlayback: 1s — fast start threshold
+     * - bufferForPlaybackAfterRebuffer: 500ms — instant recovery on seek!
      */
     private val loadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            30_000,  // minBufferMs: 30s minimum pre-buffered video pool
-            120_000, // maxBufferMs: 120s (2 mins) maximum buffer limit
-            500,     // bufferForPlaybackMs: 500ms (0.5s) ultra-fast instant playback start!
-            1_000    // bufferForPlaybackAfterRebufferMs: 1s rebuffer stability for fast network recovery
+            15_000,  // minBufferMs: 15s minimum pre-buffered
+            60_000,  // maxBufferMs: 60s maximum buffer
+            1_000,   // bufferForPlaybackMs: 1s — fast start threshold
+            500      // bufferForPlaybackAfterRebufferMs: 500ms — instant recovery on seek!
         )
         .setPrioritizeTimeOverSizeThresholds(true)
-        .setTargetBufferBytes(64 * 1024 * 1024) // 64MB dedicated RAM buffer pool
-        .setBackBuffer(30_000, true) // 30s back-buffer for instant 0ms seek rewind
+        .setTargetBufferBytes(32 * 1024 * 1024) // 32MB RAM buffer
+        .setBackBuffer(15_000, true)             // 15s back-buffer for instant seek rewind
         .build()
 
     fun getPlayer(context: Context): ExoPlayer {
@@ -38,7 +43,13 @@ object GlobalPlayerManager {
             val bandwidthMeter = androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.Builder(context).build()
 
             val httpDataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(com.adzero.app.App.okHttpClient)
-                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+                .setUserAgent("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+                .setDefaultRequestProperties(
+                    mapOf(
+                        "Origin" to "https://www.youtube.com",
+                        "Referer" to "https://www.youtube.com/"
+                    )
+                )
 
             val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(httpDataSourceFactory)
 
@@ -46,18 +57,15 @@ object GlobalPlayerManager {
                 .setBandwidthMeter(bandwidthMeter)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .setLoadControl(loadControl)
-                .setAudioAttributes(audioAttributes, false)
-                .setHandleAudioBecomingNoisy(false)
+                // handleAudioFocus=true ensures the player gets audio focus and pauses for calls
+                .setAudioAttributes(audioAttributes, true)
+                .setHandleAudioBecomingNoisy(true)
                 .build().apply {
                     setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
                     playWhenReady = true
                     addListener(object : Player.Listener {
-                        override fun onPlaybackStateChanged(state: Int) {
-                            if (state == Player.STATE_READY) {
-                                playWhenReady = true
-                            }
-                        }
                         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                            // Auto-recover from transient network errors
                             prepare()
                             play()
                         }

@@ -32,6 +32,7 @@ import com.adzero.app.data.HistoryManager
 import com.adzero.app.models.Video
 import com.adzero.app.models.toVideo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.search.SearchInfo
@@ -50,7 +51,11 @@ fun SearchScreen(
     var showResults by remember { mutableStateOf(false) }
     var searchResultsState by remember { mutableStateOf<List<Video>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+    var isMoreLoading by remember { mutableStateOf(false) }
+    var searchNextPage by remember { mutableStateOf<org.schabi.newpipe.extractor.Page?>(null) }
     var liveSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    val searchListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     // Working Voice Search Launcher via RecognizerIntent
     val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -123,6 +128,7 @@ fun SearchScreen(
                     
                     withContext(Dispatchers.Main) {
                         searchResultsState = items
+                        searchNextPage = searchInfo.nextPage
                         
                         // Speculatively extract the first 10 search results
                         items.take(10).forEach { video ->
@@ -134,6 +140,50 @@ fun SearchScreen(
                 }
             }
             isSearching = false
+        }
+    }
+
+    fun loadMoreSearchResults() {
+        if (isMoreLoading || searchNextPage == null || searchQuery.isBlank()) return
+        isMoreLoading = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val service = ServiceList.YouTube
+                val queryHandler = YoutubeSearchQueryHandlerFactory.getInstance()
+                    .fromQuery(searchQuery, emptyList(), "")
+                val moreInfo = SearchInfo.getMoreItems(service, queryHandler, searchNextPage)
+                val existingIds = searchResultsState.map { it.id }.toSet()
+                val newItems = moreInfo.items
+                    .filterIsInstance<StreamInfoItem>()
+                    .map { it.toVideo() }
+                    .filter { it.id !in existingIds }
+
+                withContext(Dispatchers.Main) {
+                    searchResultsState = searchResultsState + newItems
+                    searchNextPage = moreInfo.nextPage
+                    isMoreLoading = false
+                    newItems.take(4).forEach { video ->
+                        ExtractionManager.startExtraction(video, isSpeculative = true)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) { isMoreLoading = false }
+            }
+        }
+    }
+
+    val shouldLoadMoreSearch = remember {
+        derivedStateOf {
+            val totalItems = searchListState.layoutInfo.totalItemsCount
+            val lastVisibleItem = searchListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            totalItems > 0 && lastVisibleItem >= totalItems - 5
+        }
+    }
+
+    LaunchedEffect(shouldLoadMoreSearch.value) {
+        if (shouldLoadMoreSearch.value && showResults && !isSearching && !isMoreLoading && searchResultsState.isNotEmpty()) {
+            loadMoreSearchResults()
         }
     }
 
@@ -207,10 +257,11 @@ fun SearchScreen(
                     }
                 } else {
                     LazyColumn(
+                        state = searchListState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 16.dp)
+                        contentPadding = PaddingValues(bottom = 80.dp)
                     ) {
-                        items(results) { video ->
+                        items(results, key = { it.id }) { video ->
                             VideoCard(
                                 video = video,
                                 onClick = { 
@@ -219,6 +270,19 @@ fun SearchScreen(
                                 },
                                 onChannelClick = onChannelClick
                             )
+                        }
+
+                        if (isMoreLoading) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    com.adzero.app.components.YouTubeLoading()
+                                }
+                            }
                         }
                     }
                 }

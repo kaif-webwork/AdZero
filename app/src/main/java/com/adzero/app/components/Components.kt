@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -126,11 +127,6 @@ fun VideoCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp, vertical = 6.dp)
-            .graphicsLayer {
-                shadowElevation = 14f
-                shape = RoundedCornerShape(22.dp)
-                clip = true
-            }
             .clip(RoundedCornerShape(22.dp))
             .background(
                 Brush.verticalGradient(
@@ -160,8 +156,17 @@ fun VideoCard(
                 .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
                 .graphicsLayer { clip = true }
         ) {
+            val context = LocalContext.current
+            val thumbModel = remember(video.id, video.thumbnailUrl) {
+                val primaryUrl = if (video.thumbnailUrl.startsWith("//")) "https:${video.thumbnailUrl}" else video.thumbnailUrl
+                coil.request.ImageRequest.Builder(context)
+                    .data(primaryUrl)
+                    .crossfade(true)
+                    .build()
+            }
+
             AsyncImage(
-                model = video.thumbnailUrl,
+                model = thumbModel,
                 contentDescription = video.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
@@ -406,8 +411,17 @@ fun ShortCard(video: Video, onClick: () -> Unit) {
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable { onClick() }
     ) {
+        val context = LocalContext.current
+        val thumbModel = remember(video.id, video.thumbnailUrl) {
+            val primaryUrl = if (video.thumbnailUrl.startsWith("//")) "https:${video.thumbnailUrl}" else video.thumbnailUrl
+            coil.request.ImageRequest.Builder(context)
+                .data(primaryUrl)
+                .crossfade(true)
+                .build()
+        }
+
         AsyncImage(
-            model = video.thumbnailUrl,
+            model = thumbModel,
             contentDescription = video.title,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop

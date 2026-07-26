@@ -1,0 +1,7 @@
+{
+  "versionCode": 3,
+  "versionName": "3.0",
+  "downloadUrl": "https://github.com/kaif-webwork/AdZero/releases/latest",
+  "updatePriority": 1,
+  "releaseNotes": "Bug fixes and performance improvements. Added update notification."
+}

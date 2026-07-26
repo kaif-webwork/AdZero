@@ -23,4 +23,7 @@ object Constants {
         "AMOLED Dark Mode Best Practices",
         "Clean Architecture in Android"
     )
+
+    const val UPDATE_JSON_URL = "https://raw.githubusercontent.com/kaif-webwork/AdZero/main/version.json"
+    const val DEFAULT_APK_URL = "https://github.com/kaif-webwork/AdZero/releases/latest"
 }

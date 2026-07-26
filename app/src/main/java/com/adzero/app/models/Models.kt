@@ -5,7 +5,9 @@ data class VideoStream(
     val quality: String,
     val format: String = "mp4",
     val isVideoOnly: Boolean = false,
-    val isHls: Boolean = false
+    val isHls: Boolean = false,
+    val displayName: String = "",      // Human-readable track name, e.g. "English", "Hindi (Dubbed)"
+    val isOriginalTrack: Boolean = false // true for original audio, false for dubbed tracks
 )
 
 data class Video(
@@ -106,18 +108,18 @@ fun org.schabi.newpipe.extractor.stream.StreamInfoItem.toVideo(): Video {
 
     val rawThumb = thumbnails?.maxByOrNull { it.width }?.url
         ?: thumbnails?.lastOrNull()?.url
-        ?: "https://i.ytimg.com/vi/$extractedId/hq720.jpg"
+        ?: "https://i.ytimg.com/vi/$extractedId/hqdefault.jpg"
 
-    val highResThumb = if (extractedId.isNotBlank() && (rawThumb.contains("default.jpg") || rawThumb.contains("mqdefault.jpg") || rawThumb.contains("hqdefault.jpg"))) {
-        "https://i.ytimg.com/vi/$extractedId/hq720.jpg"
-    } else {
-        rawThumb
+    val cleanThumb = when {
+        rawThumb.startsWith("//") -> "https:$rawThumb"
+        !rawThumb.startsWith("http") && extractedId.isNotBlank() -> "https://i.ytimg.com/vi/$extractedId/hqdefault.jpg"
+        else -> rawThumb
     }
 
     return Video(
         id = extractedId,
         title = name ?: "",
-        thumbnailUrl = highResThumb,
+        thumbnailUrl = cleanThumb,
         channelName = uploaderName ?: "",
         channelAvatarUrl = uploaderAvatars?.maxByOrNull { it.width }?.url ?: uploaderAvatars?.firstOrNull()?.url ?: "https://www.gstatic.com/youtube/img/creator/avatar/default_64.png",
         views = viewsStr,

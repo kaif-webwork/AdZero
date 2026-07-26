@@ -16,47 +16,19 @@ object PlaylistManager {
     val watchLaterList = mutableStateListOf<Video>()
     val likedVideosList = mutableStateListOf<Video>()
 
-    init {
-        // Seed user's connected YouTube playlists
-        userPlaylists.addAll(
-            listOf(
-                UserPlaylist(
-                    id = "pl_liked",
-                    title = "Liked Videos",
-                    itemCount = 142,
-                    thumbnailUrl = "https://picsum.photos/seed/liked_playlist/400/225",
-                    isPrivate = true
-                ),
-                UserPlaylist(
-                    id = "pl_watch_later",
-                    title = "Watch Later",
-                    itemCount = 28,
-                    thumbnailUrl = "https://picsum.photos/seed/watch_later/400/225",
-                    isPrivate = true
-                ),
-                UserPlaylist(
-                    id = "pl_lofi",
-                    title = "My Favorite Lofi & Chill Mix",
-                    itemCount = 54,
-                    thumbnailUrl = "https://picsum.photos/seed/lofi_mix/400/225",
-                    isPrivate = false
-                ),
-                UserPlaylist(
-                    id = "pl_tech",
-                    title = "Coding & AI Tutorials 2026",
-                    itemCount = 36,
-                    thumbnailUrl = "https://picsum.photos/seed/coding_ai/400/225",
-                    isPrivate = false
-                ),
-                UserPlaylist(
-                    id = "pl_gaming",
-                    title = "Gaming Highlights & Clutches",
-                    itemCount = 19,
-                    thumbnailUrl = "https://picsum.photos/seed/gaming_clutches/400/225",
-                    isPrivate = false
-                )
-            )
-        )
+    fun addToWatchLater(video: Video) {
+        if (!watchLaterList.any { it.id == video.id }) {
+            watchLaterList.add(video)
+        }
+    }
+
+    fun toggleLike(video: Video) {
+        val existing = likedVideosList.indexOfFirst { it.id == video.id }
+        if (existing >= 0) {
+            likedVideosList.removeAt(existing)
+        } else {
+            likedVideosList.add(video)
+        }
     }
 
     fun toggleWatchLater(video: Video) {
