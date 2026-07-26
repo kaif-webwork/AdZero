@@ -34,13 +34,13 @@ class App : Application(), ImageLoaderFactory {
         return ImageLoader.Builder(this)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
+                    .maxSizePercent(0.15) // 15% RAM allocation — safe for 1.5GB/2GB low-end devices
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(100L * 1024L * 1024L) // 100 MB disk cache
+                    .maxSizeBytes(50L * 1024L * 1024L) // 50 MB disk cache
                     .build()
             }
             .respectCacheHeaders(false)
@@ -68,8 +68,14 @@ class App : Application(), ImageLoaderFactory {
             }
         }
         
-        // Warm up the player, initialize MicroGManager & pre-warm feed cache
-        com.adzero.app.data.MicroGManager.init(this)
+        // Warm up the player & pre-warm feed cache
+        com.adzero.app.data.UserAccountManager.init(this)
+        val cookies = com.adzero.app.data.UserAccountManager.userCookies
+        if (!cookies.isNullOrBlank()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                com.adzero.app.data.RealAccountSyncManager.syncAccountWithCookies(this@App, cookies)
+            }
+        }
         com.adzero.app.data.WarmFeedCache.prewarm(this)
         GlobalPlayerManager.getPlayer(this)
     }

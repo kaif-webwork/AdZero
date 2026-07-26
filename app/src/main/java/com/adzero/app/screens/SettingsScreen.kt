@@ -38,6 +38,10 @@ fun SettingsScreen(
     var dataSaverEnabled by remember { mutableStateOf(false) }
     var backgroundPlayEnabled by remember { mutableStateOf(true) }
 
+    var showAuthSheet by remember { mutableStateOf(false) }
+    var showLanguageSheet by remember { mutableStateOf(false) }
+    var currentLang by remember { mutableStateOf(com.adzero.app.data.ContentLanguageManager.getCurrentLanguage(context)) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -59,21 +63,40 @@ fun SettingsScreen(
                 .background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
-            // Account & MicroG Section
+
+            if (showAuthSheet) {
+                item {
+                    com.adzero.app.components.YouTubeAuthSheet(
+                        onDismiss = { showAuthSheet = false },
+                        onSuccess = { name, email, avatar ->
+                            showAuthSheet = false
+                            android.widget.Toast.makeText(context, "Connected to $name!", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+            }
+
+            // Account Section
             item {
-                SettingsSectionHeader("Account & MicroG")
+                SettingsSectionHeader("YouTube Account")
             }
 
             item {
-                val isMicroGInstalled = remember { com.adzero.app.data.MicroGManager.isMicroGInstalled(context) }
-                val isLoggedIn = com.adzero.app.data.MicroGManager.isLoggedIn
+                val isLoggedIn = com.adzero.app.data.UserAccountManager.isLoggedIn
+                val userName = com.adzero.app.data.UserAccountManager.userName
+                val userEmail = com.adzero.app.data.UserAccountManager.userEmail
 
                 SettingsActionRow(
                     icon = Icons.Default.AccountCircle,
-                    title = if (isLoggedIn) "Google Account: ${com.adzero.app.data.MicroGManager.accountName}" else "Sign In with MicroG",
-                    subtitle = if (isLoggedIn) com.adzero.app.data.MicroGManager.accountEmail else if (isMicroGInstalled) "MicroG detected • Tap to connect Google Account" else "MicroG required • Tap to download APK & connect",
+                    title = if (isLoggedIn) "Account: $userName" else "Sign In with YouTube Account",
+                    subtitle = if (isLoggedIn) "$userEmail • Connected & Active" else "Securely sign in via Google to sync your real data",
                     onClick = {
-                        com.adzero.app.data.MicroGManager.launchMicroGAccountSetup(context)
+                        if (isLoggedIn) {
+                            com.adzero.app.data.UserAccountManager.logout(context)
+                            android.widget.Toast.makeText(context, "Signed out", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            showAuthSheet = true
+                        }
                     }
                 )
             }
@@ -123,9 +146,6 @@ fun SettingsScreen(
             }
 
             item {
-                var showLanguageSheet by remember { mutableStateOf(false) }
-                var currentLang by remember { mutableStateOf(com.adzero.app.data.ContentLanguageManager.getCurrentLanguage(context)) }
-
                 SettingsActionRow(
                     icon = Icons.Default.Translate,
                     title = "Content Language: ${currentLang.flagEmoji} ${currentLang.name}",

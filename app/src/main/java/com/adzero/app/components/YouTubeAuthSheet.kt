@@ -21,7 +21,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.adzero.app.data.MicroGManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +56,7 @@ fun YouTubeAuthSheet(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Sign in to YouTube / MicroG",
+                        text = "Sign in to YouTube",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
@@ -74,6 +77,11 @@ fun YouTubeAuthSheet(
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            settings.safeBrowsingEnabled = true
+                        }
                         settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
                         
                         webViewClient = object : WebViewClient() {
@@ -91,13 +99,28 @@ fun YouTubeAuthSheet(
                                 val cookies = CookieManager.getInstance().getCookie(url)
                                 if (url != null && (url.contains("youtube.com") || url.contains("myaccount.google.com")) && cookies != null) {
                                     if (cookies.contains("SAPISID") || cookies.contains("LOGIN_INFO") || cookies.contains("SID")) {
-                                        // Save logged in state
-                                        MicroGManager.saveAccount(
-                                            ctx,
-                                            "YouTube Connected User",
-                                            "google.account@youtube.com"
-                                        )
-                                        onSuccess("YouTube Account User", "google.account@youtube.com", null)
+                                        // Attempt to fetch avatar / handle via JS
+                                        view?.evaluateJavascript(
+                                            "(function() { try { return document.querySelector('#avatar-btn img, yt-img-shadow img').src; } catch(e) { return ''; } })()"
+                                        ) { avatarResult ->
+                                            val cleanAvatar = avatarResult?.replace("\"", "")?.takeIf { it.startsWith("http") }
+                                            
+                                            // Save account state
+                                            com.adzero.app.data.UserAccountManager.saveAccount(
+                                                ctx,
+                                                name = "YouTube Connected User",
+                                                email = "Live Account Synced",
+                                                avatarUrl = cleanAvatar,
+                                                cookies = cookies
+                                            )
+
+                                            // Trigger Live Account Data Sync
+                                            CoroutineScope(Dispatchers.IO).launch {
+                                                com.adzero.app.data.RealAccountSyncManager.syncAccountWithCookies(ctx, cookies)
+                                            }
+
+                                            onSuccess("YouTube Connected User", "Live Account Synced", cleanAvatar)
+                                        }
                                     }
                                 }
                             }

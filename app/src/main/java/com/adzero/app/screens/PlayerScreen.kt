@@ -485,15 +485,7 @@ fun PlayerScreen(
     val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val isCollapsed = fraction < 0.5f
 
-    // ── Single Reusable PlayerView Instance (Eliminates AndroidView re-creation lag) ──
-    val playerView = remember(context) {
-        PlayerView(context).apply {
-            player = exoPlayer
-            useController = false
-            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        }
-    }
+
 
     Box(
         modifier = Modifier
@@ -515,12 +507,18 @@ fun PlayerScreen(
                 // Video Content Surface
                 if (selectedStream != null) {
                     AndroidView(
-                        factory = { playerView },
+                        factory = { ctx ->
+                            PlayerView(ctx).apply {
+                                player = exoPlayer
+                                useController = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                            }
+                        },
                         modifier = Modifier.fillMaxSize(),
                         update = { view ->
-                            view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            view.requestLayout()
-                            view.invalidate()
+                            view.player = exoPlayer
+                            view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         }
                     )
                 } else {
@@ -633,12 +631,18 @@ fun PlayerScreen(
                 ) {
                     if (selectedStream != null) {
                         AndroidView(
-                            factory = { playerView },
+                            factory = { ctx ->
+                                PlayerView(ctx).apply {
+                                    player = exoPlayer
+                                    useController = false
+                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                    layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                                }
+                            },
                             modifier = Modifier.fillMaxSize(),
                             update = { view ->
+                                view.player = exoPlayer
                                 view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                                view.requestLayout()
-                                view.invalidate()
                             }
                         )
                     } else {

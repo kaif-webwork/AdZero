@@ -23,14 +23,14 @@ object GlobalPlayerManager {
      */
     private val loadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            15_000,  // minBufferMs: 15s minimum pre-buffered
-            60_000,  // maxBufferMs: 60s maximum buffer
-            1_000,   // bufferForPlaybackMs: 1s — fast start threshold
+            10_000,  // minBufferMs: 10s minimum pre-buffered
+            30_000,  // maxBufferMs: 30s maximum buffer (prevents OOM on 2GB/3GB RAM devices)
+            800,     // bufferForPlaybackMs: 800ms — fast start threshold
             500      // bufferForPlaybackAfterRebufferMs: 500ms — instant recovery on seek!
         )
         .setPrioritizeTimeOverSizeThresholds(true)
-        .setTargetBufferBytes(32 * 1024 * 1024) // 32MB RAM buffer
-        .setBackBuffer(15_000, true)             // 15s back-buffer for instant seek rewind
+        .setTargetBufferBytes(12 * 1024 * 1024) // 12MB RAM buffer (safe for low-end devices)
+        .setBackBuffer(5_000, true)              // 5s back-buffer for seek rewind
         .build()
 
     fun getPlayer(context: Context): ExoPlayer {

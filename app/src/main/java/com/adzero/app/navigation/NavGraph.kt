@@ -141,61 +141,21 @@ fun MainAppNavigation(
         state = playerDraggableState,
         mainContent = {
             Scaffold(
-                containerColor = Color(0xFF000000),
-                bottomBar = {
-                    val showBottomBar = currentRoute in listOf(
-                        Screen.Home.route,
-                        Screen.Subscriptions.route,
-                        Screen.Profile.route,
-                        Screen.Shorts.route
-                    )
-                    if (showBottomBar) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 18.dp, end = 18.dp, bottom = 20.dp)
-                                .navigationBarsPadding(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.9f)
-                                    .height(52.dp)
-                                    .offset(y = 8.dp)
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            colors = listOf(
-                                                Color(0xFF2E335A).copy(alpha = 0.25f),
-                                                Color(0xFF1C1C22).copy(alpha = 0.35f),
-                                                Color(0xFF2E335A).copy(alpha = 0.25f)
-                                            )
-                                        ),
-                                        shape = RoundedCornerShape(26.dp)
-                                    )
-                            )
+                containerColor = Color.Transparent,
+                contentWindowInsets = WindowInsets(0, 0, 0, 0)
+            ) { _ ->
+                val showBottomBar = currentRoute in listOf(
+                    Screen.Home.route,
+                    Screen.Subscriptions.route,
+                    Screen.Profile.route,
+                    Screen.Shorts.route
+                )
 
-                            PureAppleLiquidGlassDock(
-                                tabs = bottomTabs,
-                                currentRoute = currentRoute,
-                                onTabSelected = { tab ->
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    if (tab.route != currentRoute) {
-                                        navController.navigate(tab.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            ) { paddingValues ->
-                Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+                Box(modifier = Modifier.fillMaxSize().background(Color(0xFF000000))) {
                     NavHost(
                         navController = navController,
-                        startDestination = Screen.Home.route
+                        startDestination = Screen.Home.route,
+                        modifier = Modifier.fillMaxSize()
                     ) {
                         composable(Screen.Home.route) {
                             HomeScreen(
@@ -271,21 +231,31 @@ fun MainAppNavigation(
                         }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp)
-                            .align(Alignment.BottomCenter)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        Color.Transparent,
-                                        Color.Black.copy(alpha = 0.22f),
-                                        Color.Black.copy(alpha = 0.50f)
-                                    )
-                                )
+                    if (showBottomBar) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.BottomCenter)
+                                .padding(start = 18.dp, end = 18.dp, bottom = 20.dp)
+                                .navigationBarsPadding(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            PureAppleLiquidGlassDock(
+                                tabs = bottomTabs,
+                                currentRoute = currentRoute,
+                                onTabSelected = { tab ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (tab.route != currentRoute) {
+                                        navController.navigate(tab.route) {
+                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
+                                }
                             )
-                    )
+                        }
+                    }
                 }
             }
         },
@@ -329,18 +299,18 @@ private fun PureAppleLiquidGlassDock(
             .fillMaxWidth()
             .height(62.dp),
         shape = RoundedCornerShape(31.dp),
-        color = Color(0xEE141624), // 93% high-contrast deep dark glass fill
+        color = Color(0xCC141624), // Translucent liquid glass fill
         border = BorderStroke(
-            2.2.dp,
+            1.5.dp,
             Brush.verticalGradient(
                 listOf(
-                    Color.White.copy(alpha = 0.98f), // Ultra-bright glowing 3D top rim
-                    Color.White.copy(alpha = 0.40f),
-                    Color.White.copy(alpha = 0.85f)  // Bright bottom specular light edge
+                    Color.White.copy(alpha = 0.60f), // Glowing 3D top rim
+                    Color.White.copy(alpha = 0.20f),
+                    Color.White.copy(alpha = 0.40f)  // Specular light edge
                 )
             )
         ),
-        shadowElevation = 32.dp
+        shadowElevation = 0.dp
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(5.dp)) {
             val tabWidth = maxWidth / tabs.size

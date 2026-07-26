@@ -39,8 +39,18 @@ fun ProfileScreen(
     onVideoClick: (Video) -> Unit,
     onSettingsClick: () -> Unit = {}
 ) {
-    var showEmailDialog by remember { mutableStateOf(false) }
-    var userEmailInput by remember { mutableStateOf("") }
+    var showAuthSheet by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    if (showAuthSheet) {
+        com.adzero.app.components.YouTubeAuthSheet(
+            onDismiss = { showAuthSheet = false },
+            onSuccess = { name, email, avatar ->
+                showAuthSheet = false
+                android.widget.Toast.makeText(context, "Account Connected Successfully!", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -75,192 +85,145 @@ fun ProfileScreen(
                 .background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            // ── MicroG Google Account Section ──────────────────────────────────────────
+            // ── Secure YouTube Account Header Card ───────────────────────────
             item {
-                val context = androidx.compose.ui.platform.LocalContext.current
-                val isMicroGInstalled = remember { com.adzero.app.data.MicroGManager.isMicroGInstalled(context) }
-
-                LaunchedEffect(Unit) {
-                    com.adzero.app.data.MicroGManager.autoDetectAndConnectMicroGAccount(context)
-                }
+                val isLoggedIn = com.adzero.app.data.UserAccountManager.isLoggedIn
+                val userName = com.adzero.app.data.UserAccountManager.userName
+                val userEmail = com.adzero.app.data.UserAccountManager.userEmail
+                val avatarUrl = com.adzero.app.data.UserAccountManager.userAvatarUrl
 
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                     )
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            if (com.adzero.app.data.MicroGManager.isLoggedIn && com.adzero.app.data.MicroGManager.avatarUrl != null) {
-                                AsyncImage(
-                                    model = com.adzero.app.data.MicroGManager.avatarUrl,
-                                    contentDescription = "Avatar",
-                                    modifier = Modifier.size(52.dp).clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
+                        if (isLoggedIn) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                if (!avatarUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = avatarUrl,
+                                        contentDescription = "Avatar",
+                                        modifier = Modifier.size(52.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFFF0000)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = userName.take(1).uppercase(),
+                                            color = Color.White,
+                                            fontSize = 22.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(
+                                            text = userName,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                        Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                                    }
+                                    Text(
+                                        text = userEmail,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
                                 Box(
                                     modifier = Modifier
-                                        .size(52.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF4285F4)),
-                                    contentAlignment = Alignment.Center
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF1B5E20).copy(alpha = 0.2f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Text(
-                                        text = com.adzero.app.data.MicroGManager.accountName.take(1).uppercase(),
-                                        color = Color.White,
-                                        fontSize = 22.sp,
+                                        text = "Active ✓",
+                                        color = Color(0xFF4CAF50),
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
 
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(
+                                onClick = { com.adzero.app.data.UserAccountManager.logout(context) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Sign Out of YouTube Account")
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Red),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = com.adzero.app.data.MicroGManager.accountName,
+                                        text = "Connect YouTube Account",
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onBackground
                                     )
-                                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
-                                }
-                                Text(
-                                    text = com.adzero.app.data.MicroGManager.accountEmail,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            // MicroG installation status badge
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF1B5E20).copy(alpha = 0.2f))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = "MicroG Connected ✓",
-                                    color = Color(0xFF4CAF50),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        Text(
-                            text = "Your Google/YouTube account is automatically synced via MicroG (ReVanced Session Active).",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 16.sp
-                        )
-
-                        val coroutineScope = rememberCoroutineScope()
-                        val accountPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-                            contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
-                        ) { result ->
-                            if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
-                                val selectedEmail = result.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME)
-                                if (!selectedEmail.isNullOrBlank()) {
-                                    val name = selectedEmail.substringBefore("@").replace(".", " ").capitalize()
-                                    com.adzero.app.data.MicroGManager.saveAccount(context, name, selectedEmail)
-                                    coroutineScope.launch {
-                                        com.adzero.app.data.RealAccountSyncManager.syncRealYouTubeAccount(context, selectedEmail.substringBefore("@"))
-                                        android.widget.Toast.makeText(context, "Connected to $selectedEmail! Live data synced.", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
+                                    Text(
+                                        text = "Securely sign in to access your real subscriptions, history & playlists.",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 16.sp
+                                    )
                                 }
                             }
-                        }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
                             Button(
-                                onClick = {
-                                    try {
-                                        val intent = com.adzero.app.data.MicroGManager.createAccountPickerIntent()
-                                        accountPickerLauncher.launch(intent)
-                                    } catch (e: Exception) {
-                                        showEmailDialog = true
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
+                                onClick = { showAuthSheet = true },
+                                modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(20.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4))
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0000))
                             ) {
                                 Icon(Icons.Default.AccountCircle, null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Select MicroG Account", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Sign In with Google / YouTube", fontWeight = FontWeight.Bold)
                             }
-
-                            OutlinedButton(
-                                onClick = { showEmailDialog = true },
-                                shape = RoundedCornerShape(20.dp)
-                            ) {
-                                Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
-                            }
-
-                            OutlinedButton(
-                                onClick = { com.adzero.app.data.MicroGManager.launchMicroGAccountSetup(context) },
-                                shape = RoundedCornerShape(20.dp)
-                            ) {
-                                Icon(Icons.Default.Settings, null, modifier = Modifier.size(16.dp))
-                            }
-                        }
-
-                        if (showEmailDialog) {
-                            AlertDialog(
-                                onDismissRequest = { showEmailDialog = false },
-                                title = { Text("Link Google Account Email", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-                                text = {
-                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Text("Enter your Google Account email added in MicroG to sync your exact feed & playlists:", fontSize = 13.sp)
-                                        OutlinedTextField(
-                                            value = userEmailInput,
-                                            onValueChange = { userEmailInput = it },
-                                            label = { Text("Google Account Email") },
-                                            singleLine = true,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                },
-                                confirmButton = {
-                                    Button(
-                                        onClick = {
-                                            if (userEmailInput.isNotBlank()) {
-                                                val name = userEmailInput.substringBefore("@").replace(".", " ").capitalize()
-                                                com.adzero.app.data.MicroGManager.saveAccount(context, name, userEmailInput)
-                                                coroutineScope.launch {
-                                                    com.adzero.app.data.RealAccountSyncManager.syncRealYouTubeAccount(context, userEmailInput.substringBefore("@"))
-                                                }
-                                            }
-                                            showEmailDialog = false
-                                        }
-                                    ) {
-                                        Text("Save & Sync")
-                                    }
-                                },
-                                dismissButton = {
-                                    TextButton(onClick = { showEmailDialog = false }) {
-                                        Text("Cancel")
-                                    }
-                                }
-                            )
                         }
                     }
                 }
             }
+
 
             // ── Quick Access Row (History, Watch Later, Playlists) ──────────
             item {

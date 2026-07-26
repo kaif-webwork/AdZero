@@ -245,7 +245,7 @@ fun HomeScreen(
                     if (filteredVideos.isNotEmpty()) {
                         videosState = filteredVideos
                         com.adzero.app.data.FastContentStore.saveFeed(context, selectedCategory, filteredVideos)
-                        filteredVideos.take(10).forEach { video ->
+                        filteredVideos.take(3).forEach { video ->
                             ExtractionManager.startExtraction(video, isSpeculative = true)
                         }
                     }
@@ -298,49 +298,20 @@ fun HomeScreen(
                     }
                 },
                 actions = {
-                    // Cast icon
-                    IconButton(onClick = {}) {
-                        Icon(imageVector = Icons.Default.Cast, contentDescription = "Cast",
-                            modifier = Modifier.size(23.dp))
-                    }
-                    // Notifications with red badge
-                    IconButton(onClick = {}) {
-                        Box {
-                            Icon(imageVector = Icons.Default.Notifications, contentDescription = "Notifications",
-                                modifier = Modifier.size(24.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .align(Alignment.TopEnd)
-                                    .clip(CircleShape)
-                                    .background(Color.Red)
-                            )
-                        }
-                    }
-                    // Search
+                    // Search icon
                     IconButton(onClick = onSearchClick) {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = "Search",
-                            modifier = Modifier.size(24.dp))
-                    }
-                    // Profile avatar
-                    IconButton(onClick = onProfileClick) {
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("A", color = MaterialTheme.colorScheme.onPrimary,
-                                fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                     Spacer(modifier = Modifier.width(4.dp))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 ),
-                windowInsets = WindowInsets(0, 0, 0, 0)
+                windowInsets = TopAppBarDefaults.windowInsets
             )
         }
     ) { paddingValues ->

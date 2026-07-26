@@ -130,8 +130,7 @@ fun SearchScreen(
                         searchResultsState = items
                         searchNextPage = searchInfo.nextPage
                         
-                        // Speculatively extract the first 10 search results
-                        items.take(10).forEach { video ->
+                        items.take(3).forEach { video ->
                             ExtractionManager.startExtraction(video, isSpeculative = true)
                         }
                     }
