@@ -21,6 +21,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -203,6 +204,9 @@ fun PlayerScreen(
     var showBrightnessHud by remember { mutableStateOf(false) }
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableLongStateOf(0L) }
+    // Pinch-to-fill: true = RESIZE_MODE_ZOOM (fill/crop), false = RESIZE_MODE_FIT (letterbox)
+    var isFillMode by remember { mutableStateOf(false) }
+    var showFillModeHud by remember { mutableStateOf(false) }
 
     val okHttpClient = remember { App.okHttpClient }
     val exoPlayer = remember { GlobalPlayerManager.getPlayer(context) }
@@ -783,7 +787,7 @@ fun PlayerScreen(
                             modifier = Modifier.fillMaxSize(),
                             update = { view ->
                                 view.player = exoPlayer
-                                view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                view.resizeMode = if (isFillMode) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
                             }
                         )
                     } else {
@@ -827,13 +831,14 @@ fun PlayerScreen(
                                         }
                                     )
                                 }
-                                // Layer 2: Drag gestures — vertical (volume/brightness - landscape only) + horizontal (scrub)
+                                // Layer 2: Drag gestures — vertical (Swipe Up -> Landscape / Swipe Down -> Portrait / volume / brightness) + horizontal (scrub)
                                 .pointerInput(totalDuration, isLandscape) {
                                     var dragStartX = 0f
                                     var dragStartY = 0f
                                     var dragAxis: String? = null // "vertical" | "horizontal"
                                     val AXIS_LOCK_THRESHOLD = 12f  // px before axis is decided
                                     val VERTICAL_SENSITIVITY = 0.004f  // fraction per px
+                                    val ROTATION_SWIPE_THRESHOLD = 80f // px swipe required to toggle orientation
 
                                     awaitEachGesture {
                                         // Wait for first finger down
@@ -844,6 +849,7 @@ fun PlayerScreen(
 
                                         var accX = 0f
                                         var accY = 0f
+                                        var cummulativeDy = 0f
 
                                         do {
                                             val event = awaitPointerEvent()
@@ -852,6 +858,7 @@ fun PlayerScreen(
                                             val dy = drag.position.y - drag.previousPosition.y
                                             accX += kotlin.math.abs(dx)
                                             accY += kotlin.math.abs(dy)
+                                            cummulativeDy += dy
 
                                             // Lock axis once threshold exceeded
                                             if (dragAxis == null && (accX > AXIS_LOCK_THRESHOLD || accY > AXIS_LOCK_THRESHOLD)) {
@@ -860,21 +867,18 @@ fun PlayerScreen(
 
                                             when (dragAxis) {
                                                 "vertical" -> {
-                                                    // Volume & Brightness swipes ONLY active in Landscape mode
+                                                    drag.consume()
                                                     if (isLandscape) {
-                                                        drag.consume()
                                                         val isRightHalf = dragStartX > size.width / 2
                                                         val delta = -dy * VERTICAL_SENSITIVITY
 
                                                         if (isRightHalf) {
-                                                            // Right half → Volume
                                                             val newVol = (volumeLevel + delta * maxVolume).coerceIn(0f, maxVolume.toFloat())
                                                             volumeLevel = newVol
                                                             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol.toInt(), 0)
                                                             showVolumeHud = true
                                                             showBrightnessHud = false
                                                         } else {
-                                                            // Left half → Brightness
                                                             val newBright = (brightnessLevel + delta).coerceIn(0.01f, 1f)
                                                             brightnessLevel = newBright
                                                             val activity = context as? Activity
@@ -908,10 +912,70 @@ fun PlayerScreen(
                                         if (dragAxis == "vertical") {
                                             showVolumeHud = false
                                             showBrightnessHud = false
+
+                                            // Toggle orientation based on swipe gesture direction:
+                                            // 1. Portrait mode -> Swipe UP (cummulativeDy < -ROTATION_SWIPE_THRESHOLD) -> Landscape
+                                            if (!isLandscape && cummulativeDy < -ROTATION_SWIPE_THRESHOLD) {
+                                                (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                            }
+                                            // 2. Landscape mode -> Swipe DOWN (cummulativeDy > ROTATION_SWIPE_THRESHOLD) -> Portrait
+                                            else if (isLandscape && cummulativeDy > ROTATION_SWIPE_THRESHOLD) {
+                                                (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                            }
+                                        }
+                                    }
+                                }
+                                // Layer 3: Pinch-to-fill (Landscape only) — pinch out = fill/crop, pinch in = fit
+                                .pointerInput(isLandscape, isFillMode) {
+                                    if (isLandscape) {
+                                        detectTransformGestures { _, _, zoom, _ ->
+                                            if (zoom > 1.05f && !isFillMode) {
+                                                // Pinch OUT -> Fill / Crop mode
+                                                isFillMode = true
+                                                showFillModeHud = true
+                                            } else if (zoom < 0.95f && isFillMode) {
+                                                // Pinch IN -> Fit / Letterbox mode
+                                                isFillMode = false
+                                                showFillModeHud = true
+                                            }
                                         }
                                     }
                                 }
                         )
+
+                        // Fill Mode HUD
+                        if (showFillModeHud) {
+                            LaunchedEffect(isFillMode) {
+                                delay(1200)
+                                showFillModeHud = false
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 56.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(Color.Black.copy(alpha = 0.70f))
+                                    .padding(horizontal = 18.dp, vertical = 8.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isFillMode) Icons.Default.ZoomOutMap else Icons.Default.FitScreen,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = if (isFillMode) "Fill" else "Fit",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
 
                         // Controls Overlay
                         androidx.compose.animation.AnimatedVisibility(

@@ -1,5 +1,6 @@
 package com.adzero.app.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.*
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.BorderStroke
@@ -114,6 +115,56 @@ fun MainAppNavigation(
                 com.adzero.app.data.UpdateManager.dismissUpdate()
             }
         )
+    }
+    // ── Gesture Navigation & BackHandler Management ──────────────────────────────
+    val isPlayerExpanded = playerDraggableState.targetValue == PlayerState.Expanded || 
+                           playerDraggableState.currentValue == PlayerState.Expanded
+
+    val isPlayerCollapsed = playerDraggableState.targetValue == PlayerState.Collapsed || 
+                            playerDraggableState.currentValue == PlayerState.Collapsed
+
+    val isOnSubTab = currentRoute in listOf(
+        Screen.Shorts.route,
+        Screen.Subscriptions.route,
+        Screen.Profile.route
+    )
+
+    val isOnHomeTab = currentRoute == Screen.Home.route
+    val isPlayerClosed = playerDraggableState.currentValue == PlayerState.Closed && 
+                         playerDraggableState.targetValue == PlayerState.Closed
+
+    // 1. Back gesture while player is expanded -> Minimize to Mini Player
+    BackHandler(enabled = isPlayerExpanded) {
+        scope.launch {
+            playerDraggableState.animateTo(PlayerState.Collapsed)
+        }
+    }
+
+    // 2. Back gesture while player is in Mini Player mode -> Close Mini Player
+    BackHandler(enabled = isPlayerCollapsed) {
+        scope.launch {
+            playerDraggableState.animateTo(PlayerState.Closed)
+        }
+    }
+
+    // 3. Back gesture on Sub-tabs (Shorts, Subscriptions, Profile) -> Return to Home Tab
+    BackHandler(enabled = !isPlayerExpanded && !isPlayerCollapsed && isOnSubTab) {
+        navController.navigate(Screen.Home.route) {
+            popUpTo(Screen.Home.route) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
+
+    // 4. Back gesture on Home root screen -> 2-Tap exit toast protection (Prevents accidental app closing!)
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
+    BackHandler(enabled = !isPlayerExpanded && !isPlayerCollapsed && isOnHomeTab && isPlayerClosed) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastBackPressTime < 2000) {
+            (context as? android.app.Activity)?.finish()
+        } else {
+            lastBackPressTime = currentTime
+            android.widget.Toast.makeText(context, "Press back again to exit", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     DraggablePlayerLayout(
