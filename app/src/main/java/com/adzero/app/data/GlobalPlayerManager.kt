@@ -8,10 +8,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
 
 @OptIn(UnstableApi::class)
 object GlobalPlayerManager {
     private var exoPlayer: ExoPlayer? = null
+    private var mediaSession: MediaSession? = null
 
     /**
      * LoadControl tuned for Ultra High Definition 2160p60 (4K 60fps) & 1080p60 Streaming:
@@ -22,10 +24,10 @@ object GlobalPlayerManager {
      */
     private val loadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-            500,     // minBufferMs (0.5s min buffer for instant throughput)
-            30_000,  // maxBufferMs (30 seconds maximum buffer)
-            100,     // bufferForPlaybackMs (100ms ZERO-LATENCY INSTANT playback startup!)
-            250      // bufferForPlaybackAfterRebufferMs (250ms instant resume)
+            2_500,   // minBufferMs (2.5s minimum buffer for 1080p/4K stream startup)
+            60_000,  // maxBufferMs (60 seconds maximum buffer)
+            1_500,   // bufferForPlaybackMs (1.5s buffer threshold prevents 0s stall/freeze on 1080p/4K)
+            2_000    // bufferForPlaybackAfterRebufferMs (2.0s resume buffer)
         )
         .setPrioritizeTimeOverSizeThresholds(true)
         .build()
@@ -65,11 +67,17 @@ object GlobalPlayerManager {
                     setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
                     playWhenReady = true
                 }
+            
+            // Create MediaSession to support background playback & system media controls
+            mediaSession = MediaSession.Builder(context.applicationContext, exoPlayer!!)
+                .build()
         }
         return exoPlayer!!
     }
 
     fun release() {
+        mediaSession?.release()
+        mediaSession = null
         exoPlayer?.release()
         exoPlayer = null
     }

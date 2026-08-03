@@ -73,7 +73,13 @@ fun HomeScreen(
             withContext(Dispatchers.IO) {
                 try {
                     val service = ServiceList.YouTube
-                    val topics = getCategorySearchQueries(selectedCategory)
+                    com.adzero.app.data.UserPreferenceEngine.init(context)
+                    val topics = if (selectedCategory.equals("All", ignoreCase = true)) {
+                        val pQueries = com.adzero.app.data.UserPreferenceEngine.getPersonalizedQueries()
+                        if (pQueries.isNotEmpty()) pQueries else getCategorySearchQueries("All")
+                    } else {
+                        getCategorySearchQueries(selectedCategory)
+                    }
                     val topic1 = topics.random()
                     val topic2 = (topics - topic1).firstOrNull() ?: topic1
                     
@@ -83,10 +89,12 @@ fun HomeScreen(
                     val res1 = try { SearchInfo.getInfo(service, handler1).relatedItems } catch(e: Exception) { emptyList() }
                     val res2 = try { SearchInfo.getInfo(service, handler2).relatedItems } catch(e: Exception) { emptyList() }
                     
-                    val combined = (res1 + res2).filterIsInstance<StreamInfoItem>().map { it.toVideo() }.shuffled()
+                    val combined = (res1 + res2).filterIsInstance<StreamInfoItem>().map { it.toVideo() }
                     val filtered = if (selectedCategory.equals("Live", ignoreCase = true)) {
                         combined.filter { it.isLive || it.duration.equals("LIVE", ignoreCase = true) }
-                    } else combined
+                    } else if (selectedCategory.equals("All", ignoreCase = true)) {
+                        com.adzero.app.data.UserPreferenceEngine.rankAndFilterFeed(combined)
+                    } else combined.shuffled()
 
                     val freshVideos = filtered
                     
@@ -119,7 +127,6 @@ fun HomeScreen(
 
                 val storedPage = nextPageMap[selectedCategory]
                 if (storedPage != null && lastSearchTopic.isNotBlank()) {
-                    // ✔ True next-page: continue the same search with cursor
                     try {
                         val handler = YoutubeSearchQueryHandlerFactory.getInstance()
                             .fromQuery(lastSearchTopic, emptyList(), "")
@@ -136,7 +143,11 @@ fun HomeScreen(
 
                 // Fallback: search next targeted query for this specific category
                 if (newItems.isEmpty()) {
-                    val catTopics = getCategorySearchQueries(selectedCategory)
+                    val catTopics = if (selectedCategory.equals("All", ignoreCase = true)) {
+                        val pQueries = com.adzero.app.data.UserPreferenceEngine.getPersonalizedQueries()
+                        if (pQueries.isNotEmpty()) pQueries else getCategorySearchQueries("All")
+                    } else getCategorySearchQueries(selectedCategory)
+
                     val topic = catTopics.random()
                     lastSearchTopic = topic
                     val handler = YoutubeSearchQueryHandlerFactory.getInstance()
@@ -204,7 +215,15 @@ fun HomeScreen(
         withContext(Dispatchers.IO) {
             try {
                 val service = ServiceList.YouTube
-                val catQueries = getCategorySearchQueries(selectedCategory)
+                com.adzero.app.data.UserPreferenceEngine.init(context)
+
+                val catQueries = if (selectedCategory.equals("All", ignoreCase = true)) {
+                    val pQueries = com.adzero.app.data.UserPreferenceEngine.getPersonalizedQueries()
+                    if (pQueries.isNotEmpty()) pQueries else getCategorySearchQueries("All")
+                } else {
+                    getCategorySearchQueries(selectedCategory)
+                }
+
                 val q1 = catQueries.random()
                 val q2 = (catQueries - q1).firstOrNull() ?: q1
                 lastSearchTopic = q1
@@ -229,6 +248,8 @@ fun HomeScreen(
 
                 val filteredVideos = if (selectedCategory.equals("Live", ignoreCase = true)) {
                     combinedItems.filter { it.isLive || it.duration.equals("LIVE", ignoreCase = true) }
+                } else if (selectedCategory.equals("All", ignoreCase = true)) {
+                    com.adzero.app.data.UserPreferenceEngine.rankAndFilterFeed(combinedItems)
                 } else {
                     combinedItems
                 }
@@ -346,7 +367,8 @@ fun HomeScreen(
                     ) {
                             itemsIndexed(
                                 items = videosState,
-                                key = { _, video -> video.id }
+                                key = { _, video -> video.id },
+                                contentType = { _, _ -> "video_card" }
                             ) { index, video ->
                                 VideoCard(
                                     video = video,

@@ -50,6 +50,12 @@ object HistoryManager {
         }
     }
 
+    fun addWatchHistory(context: Context, video: Video) {
+        watchHistory.removeAll { it.id == video.id }
+        watchHistory.add(0, video)
+        UserPreferenceEngine.recordWatchEvent(context, video)
+    }
+
     fun addWatchHistory(video: Video) {
         watchHistory.removeAll { it.id == video.id }
         watchHistory.add(0, video)
@@ -64,6 +70,7 @@ object HistoryManager {
             searchHistory.removeAt(searchHistory.size - 1)
         }
         saveSearchHistory(context)
+        UserPreferenceEngine.recordSearchEvent(context, query)
     }
 
     fun removeSearchQuery(context: Context, query: String) {

@@ -210,7 +210,7 @@ fun SubscriptionsScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 64.dp)
                     ) {
-                        items(feedVideosState, key = { it.id }) { video ->
+                        items(feedVideosState, key = { it.id }, contentType = { "video_card" }) { video ->
                             VideoCard(
                                 video = video,
                                 onClick = { onVideoClick(video) },

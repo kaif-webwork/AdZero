@@ -326,7 +326,7 @@ fun SearchScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 80.dp)
                     ) {
-                        items(results, key = { it.id }) { video ->
+                        items(results, key = { it.id }, contentType = { "video_card" }) { video ->
                             VideoCard(
                                 video = video,
                                 onClick = { 

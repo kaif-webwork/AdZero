@@ -90,50 +90,29 @@ fun MainAppNavigation(
 
     val bottomTabs = listOf(Tab.Home, Tab.Shorts, Tab.Subscriptions, Tab.Profile)
 
-    // Update Popup Logic
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    // Update Logic
+    val updateState by com.adzero.app.data.UpdateManager.updateState.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(Unit) {
-        updateInfo = UpdateManager.checkForUpdates()
+        com.adzero.app.data.UpdateManager.checkForUpdates(context)
     }
 
-    if (updateInfo != null) {
-        AlertDialog(
-            onDismissRequest = { updateInfo = null },
-            title = { Text("Update Available 🚀") },
-            text = {
-                Column {
-                    Text("A new version (${updateInfo?.versionName}) of AdZero is available.")
-                    if (!updateInfo?.releaseNotes.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "What's New:\n${updateInfo?.releaseNotes}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
+    if (updateState.hasUpdate || updateState.isDownloading) {
+        com.adzero.app.components.UpdateDialog(
+            updateInfo = updateState,
+            onUpdateClick = {
+                if (updateState.isDownloaded && updateState.localApkFile != null) {
+                    com.adzero.app.data.UpdateManager.installApk(context, updateState.localApkFile!!)
+                } else if (updateState.downloadUrl.isNotBlank()) {
+                    scope.launch {
+                        com.adzero.app.data.UpdateManager.downloadAndInstallApk(context, updateState.downloadUrl)
                     }
                 }
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        UpdateManager.openDownloadPage(context, updateInfo?.downloadUrl ?: "")
-                        updateInfo = null
-                    }
-                ) {
-                    Text("Download Now")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { updateInfo = null }) {
-                    Text("Later")
-                }
-            },
-            shape = RoundedCornerShape(24.dp),
-            containerColor = Color(0xFF1C1C22),
-            titleContentColor = Color.White,
-            textContentColor = Color.White.copy(alpha = 0.8f)
+            onDismissClick = {
+                com.adzero.app.data.UpdateManager.dismissUpdate()
+            }
         )
     }
 
@@ -151,7 +130,7 @@ fun MainAppNavigation(
                     Screen.Shorts.route
                 )
 
-                Box(modifier = Modifier.fillMaxSize().background(Color(0xFF000000))) {
+                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     NavHost(
                         navController = navController,
                         startDestination = Screen.Home.route,
@@ -237,11 +216,11 @@ fun MainAppNavigation(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .align(Alignment.BottomCenter)
-                                .padding(start = 18.dp, end = 18.dp, bottom = 20.dp)
+                                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
                                 .navigationBarsPadding(),
                             contentAlignment = Alignment.Center
                         ) {
-                            PureAppleLiquidGlassDock(
+                            AdZeroLiquidGlassDock(
                                 tabs = bottomTabs,
                                 currentRoute = currentRoute,
                                 onTabSelected = { tab ->
@@ -286,7 +265,7 @@ fun MainAppNavigation(
 }
 
 @Composable
-private fun PureAppleLiquidGlassDock(
+private fun AdZeroLiquidGlassDock(
     tabs: List<Tab>,
     currentRoute: String?,
     onTabSelected: (Tab) -> Unit
@@ -298,52 +277,35 @@ private fun PureAppleLiquidGlassDock(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(62.dp),
-        shape = RoundedCornerShape(31.dp),
-        color = Color(0xCC141624), // Translucent liquid glass fill
+            .height(64.dp),
+        shape = RoundedCornerShape(32.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
         border = BorderStroke(
-            1.5.dp,
+            1.dp,
             Brush.verticalGradient(
                 listOf(
-                    Color.White.copy(alpha = 0.60f), // Glowing 3D top rim
-                    Color.White.copy(alpha = 0.20f),
-                    Color.White.copy(alpha = 0.40f)  // Specular light edge
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f),
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
                 )
             )
         ),
-        shadowElevation = 0.dp
+        shadowElevation = 8.dp
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(5.dp)) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(4.dp)) {
             val tabWidth = maxWidth / tabs.size
             val tabWidthPx = with(LocalDensity.current) { tabWidth.toPx() }
 
-            // ── 1. High-Contrast Translucent Backdrop Fill ────────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.White.copy(alpha = 0.12f),
-                                Color.White.copy(alpha = 0.04f),
-                                Color.White.copy(alpha = 0.08f)
-                            )
-                        )
-                    )
-            )
-
-            // ── 2. Sliding Active Chip (transition: 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)) ────
+            // ── 1. Sliding Active Pill (Spring Animation) ────────────────────
             val animXTranslation = androidx.compose.animation.core.animateFloatAsState(
                 targetValue = tabWidthPx * selectedIndex,
                 animationSpec = spring(
-                    stiffness = 260f,
-                    dampingRatio = 0.58f
+                    stiffness = 300f,
+                    dampingRatio = 0.65f
                 ),
-                label = "appleLiquidPillX"
+                label = "dockPillX"
             )
 
-            // ── 3. Ultra-Highlighted Active Tab Glass Chip (rgba(255,255,255,0.35)) ──
+            // ── 2. Active Tab Glow Capsule ─────────────────────────────
             Box(
                 modifier = Modifier
                     .graphicsLayer {
@@ -351,23 +313,25 @@ private fun PureAppleLiquidGlassDock(
                     }
                     .width(tabWidth)
                     .fillMaxHeight()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Color.White.copy(alpha = 0.35f))
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color(0xFFFF2661).copy(alpha = 0.28f),
+                                Color(0xFFFF2661).copy(alpha = 0.12f)
+                            )
+                        )
+                    )
                     .border(
                         BorderStroke(
-                            1.5.dp,
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.85f),
-                                    Color.White.copy(alpha = 0.50f)
-                                )
-                            )
+                            1.dp,
+                            Color(0xFFFF2661).copy(alpha = 0.6f)
                         ),
-                        RoundedCornerShape(24.dp)
+                        RoundedCornerShape(28.dp)
                     )
             )
 
-            // ── 4. Icon Items Layer with 0.88 Active Press Scale Feedback ──────────────
+            // ── 3. Icon + Micro-Label Content Row ──────────────────────
             Row(
                 modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -377,17 +341,17 @@ private fun PureAppleLiquidGlassDock(
                     val isSelected = index == selectedIndex
                     val isPressed = pressedTab == index
 
-                    val animIconScale = androidx.compose.animation.core.animateFloatAsState(
+                    val animScale = androidx.compose.animation.core.animateFloatAsState(
                         targetValue = when {
                             isPressed -> 0.88f
-                            isSelected -> 1.12f
-                            else -> 0.95f
+                            isSelected -> 1.05f
+                            else -> 0.92f
                         },
                         animationSpec = spring(
                             stiffness = 400f,
                             dampingRatio = 0.60f
                         ),
-                        label = "tabIconScale"
+                        label = "tabScale"
                     )
 
                     Box(
@@ -404,18 +368,26 @@ private fun PureAppleLiquidGlassDock(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Box(
+                        Column(
                             modifier = Modifier.graphicsLayer {
-                                scaleX = animIconScale.value
-                                scaleY = animIconScale.value
+                                scaleX = animScale.value
+                                scaleY = animScale.value
                             },
-                            contentAlignment = Alignment.Center
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
                             Icon(
                                 imageVector = if (isSelected) tab.filledIcon else tab.outlinedIcon,
                                 contentDescription = tab.title,
-                                tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.55f),
-                                modifier = Modifier.size(24.dp)
+                                tint = if (isSelected) Color(0xFFFF2661) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                                modifier = Modifier.size(if (isSelected) 21.dp else 19.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = tab.title,
+                                fontSize = 10.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                             )
                         }
                     }

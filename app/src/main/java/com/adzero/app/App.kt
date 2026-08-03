@@ -80,8 +80,29 @@ class App : Application(), ImageLoaderFactory {
         GlobalPlayerManager.getPlayer(this)
     }
     
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        try {
+            if (level >= TRIM_MEMORY_RUNNING_LOW || level >= TRIM_MEMORY_MODERATE) {
+                coil.Coil.imageLoader(this).memoryCache?.clear()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        try {
+            coil.Coil.imageLoader(this).memoryCache?.clear()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     override fun onTerminate() {
         GlobalPlayerManager.release()
+        com.adzero.app.data.ShortsPlayerManager.release()
         super.onTerminate()
     }
 }

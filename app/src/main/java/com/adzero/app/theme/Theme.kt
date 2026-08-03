@@ -16,15 +16,15 @@ import androidx.core.view.WindowCompat
 private val LightColorScheme = lightColorScheme(
     primary = CrimsonRed,
     secondary = PremiumBlue,
-    background = Color(0xFFFFFFFF),
+    background = Color(0xFFF8F9FA),
     surface = Color(0xFFFFFFFF),
-    surfaceVariant = LightCardSurface,
+    surfaceVariant = Color(0xFFF0F2F5),
     onPrimary = Color.White,
     onSecondary = Color.White,
     onBackground = Color(0xFF0F0F0F),
     onSurface = Color(0xFF0F0F0F),
-    onSurfaceVariant = Color(0xFF606060),
-    outline = Color(0xFFE0E0E0)
+    onSurfaceVariant = Color(0xFF555555),
+    outline = Color(0xFFD0D4DC)
 )
 
 private val AmoledColorScheme = darkColorScheme(

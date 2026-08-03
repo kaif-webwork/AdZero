@@ -302,32 +302,10 @@ fun ShortsItem(
         }
     }
 
-    val exoPlayer = remember {
-        val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(15000)
-
-        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(httpDataSourceFactory)
-
-        val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
-            .setBufferDurationsMs(10_000, 40_000, 1_200, 2_000)
-            .setPrioritizeTimeOverSizeThresholds(true)
-            .build()
-
-        ExoPlayer.Builder(context)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .setLoadControl(loadControl)
-            .build().apply {
-                repeatMode = Player.REPEAT_MODE_ONE
-                playWhenReady = true
-            }
-    }
+    val exoPlayer = remember { com.adzero.app.data.ShortsPlayerManager.getPlayer(context) }
 
     LaunchedEffect(video, isVisible) {
         if (!isVisible) {
-            exoPlayer.pause()
             return@LaunchedEffect
         }
 
@@ -378,7 +356,7 @@ fun ShortsItem(
         }
     }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, isVisible) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE) exoPlayer.pause()
             if (event == Lifecycle.Event.ON_RESUME && isVisible && isPlaying) exoPlayer.play()
@@ -386,7 +364,9 @@ fun ShortsItem(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            exoPlayer.release()
+            if (isVisible) {
+                exoPlayer.pause()
+            }
         }
     }
 
@@ -438,13 +418,13 @@ fun ShortsItem(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .navigationBarsPadding()
-                .padding(start = 12.dp, end = 90.dp, bottom = 20.dp),
+                .padding(start = 12.dp, end = 85.dp, bottom = 86.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             // Channel row: avatar + name + subscribe button
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 AsyncImage(
                     model = video.channelAvatarUrl,
@@ -458,7 +438,8 @@ fun ShortsItem(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 val isSubscribed = com.adzero.app.data.SubscriptionManager.isSubscribed(video.channelName)
                 Box(
@@ -468,13 +449,14 @@ fun ShortsItem(
                         .clickable {
                             com.adzero.app.data.SubscriptionManager.toggleSubscription(video.channelName, video.channelAvatarUrl)
                         }
-                        .padding(horizontal = 12.dp, vertical = 5.dp)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
                         text = if (isSubscribed) "Subscribed" else "Subscribe",
                         color = if (isSubscribed) Color.White else Color.Black,
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
                     )
                 }
             }
@@ -510,7 +492,7 @@ fun ShortsItem(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .padding(end = 8.dp, bottom = 20.dp),
+                .padding(end = 8.dp, bottom = 86.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

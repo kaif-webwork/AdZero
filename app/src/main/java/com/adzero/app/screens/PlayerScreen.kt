@@ -83,12 +83,9 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
-import com.adzero.app.App
-import com.adzero.app.components.CommentBottomSheet
-import com.adzero.app.components.VideoCard
-import com.adzero.app.data.ExtractionManager
-import com.adzero.app.data.GlobalPlayerManager
-import com.adzero.app.data.HistoryManager
+import com.adzero.app.*
+import com.adzero.app.components.*
+import com.adzero.app.data.*
 import com.adzero.app.models.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -212,6 +209,27 @@ fun PlayerScreen(
     
     var isBuffering by remember { mutableStateOf(false) }
 
+    // ── FEATURE: Auto-hide controls when playing ─────────────────────────
+    LaunchedEffect(isControlsVisible, isPlaying) {
+        if (isControlsVisible && isPlaying) {
+            delay(3500) // Hide after 3.5 seconds of inactivity
+            isControlsVisible = false
+        }
+    }
+
+    // ── FEATURE: Keep screen on during playback ──────────────────────────
+    DisposableEffect(isPlaying) {
+        val window = (context as? Activity)?.window
+        if (isPlaying) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
@@ -266,24 +284,38 @@ fun PlayerScreen(
         onDispose { exoPlayer.removeListener(listener) }
     }
 
-    // ── Anti-Stuck Hardware Kickstart (Preserves user's selected quality e.g. 2160p60) ──
+    // ── Anti-Stuck Auto 10s Jump for 1080p & 2160p (4K) High-Res Streams ──
     LaunchedEffect(exoPlayer, selectedStream) {
         var bufferingStuckTicks = 0
+        var hasAutoJumpedAtStart = false
         while (true) {
             delay(1000)
             val pos = exoPlayer.currentPosition
             val state = exoPlayer.playbackState
             val isBufferingOrStuck = state == Player.STATE_BUFFERING || (!exoPlayer.isPlaying && exoPlayer.playWhenReady && state != Player.STATE_ENDED)
-            
+            val quality = selectedStream?.quality ?: ""
+            val isHighRes = quality.contains("1080") || quality.contains("1440") || quality.contains("2160") || quality.contains("4k", ignoreCase = true)
+
             if (isBufferingOrStuck) {
                 bufferingStuckTicks++
-                if (bufferingStuckTicks >= 15) { // Stuck for > 15 seconds (give 4K time to buffer)
+                // If 1080p / 2160p video is stuck near start (0s - 6s) for 3 seconds:
+                if (isHighRes && pos <= 6000L && bufferingStuckTicks >= 3 && !hasAutoJumpedAtStart) {
+                    bufferingStuckTicks = 0
+                    hasAutoJumpedAtStart = true
+                    val jumpPos = if (pos < 1000L) 10000L else (pos + 10000L)
+                    exoPlayer.seekTo(jumpPos)
+                    exoPlayer.playWhenReady = true
+                    exoPlayer.play()
+                } else if (bufferingStuckTicks >= 8) { // General fallback for mid-video stalls
                     bufferingStuckTicks = 0
                     exoPlayer.playWhenReady = true
                     exoPlayer.play()
                 }
             } else {
                 bufferingStuckTicks = 0
+                if (pos > 6000L) {
+                    hasAutoJumpedAtStart = false
+                }
                 if (pos >= 0L && pos != playbackPosition) {
                     playbackPosition = pos
                 }
@@ -502,30 +534,48 @@ fun PlayerScreen(
             
             val fallbackAudio = currentAudioStream ?: extractedAudioStreams.firstOrNull { it.isOriginalTrack } ?: extractedAudioStreams.firstOrNull()
             
-            // CRITICAL FIX: Prevent ExoPlayer from freezing at 00:02.
-            // If you mix WebM video (2160p) with MP4/M4A audio in MergingMediaSource, the timestamps drift and ExoPlayer halts playback.
+            // CRITICAL FIX: Prevent ExoPlayer from freezing at 00:02 - 00:04 on 1080p/2160p (4K).
+            // Matching container formats (WebM video + WebM/Opus audio OR MP4 video + MP4/M4A audio)
+            // prevents timescale timestamp drift in MergingMediaSource.
             val chosenAudio = if (stream.isVideoOnly) {
-                extractedAudioStreams.firstOrNull { 
-                    (currentAudioStream == null || it.quality == currentAudioStream.quality) && 
-                    it.format == stream.format 
-                } ?: extractedAudioStreams.firstOrNull { it.format == stream.format } ?: fallbackAudio
+                val fmt = stream.format.lowercase()
+                val isVideoWebM = fmt.contains("webm") || fmt.contains("vp")
+                val isVideoMp4 = fmt.contains("mp4") || fmt.contains("mpeg") || fmt.contains("avc") || fmt.contains("av01")
+                
+                val matchingContainerAudio = extractedAudioStreams.firstOrNull { audio ->
+                    val afmt = audio.format.lowercase()
+                    val isAudioWebM = afmt.contains("webm") || afmt.contains("opus") || afmt.contains("webma")
+                    val isAudioMp4 = afmt.contains("m4a") || afmt.contains("mp4") || afmt.contains("aac")
+                    
+                    (currentAudioStream == null || audio.quality == currentAudioStream.quality) &&
+                    ((isVideoWebM && isAudioWebM) || (isVideoMp4 && isAudioMp4))
+                } ?: extractedAudioStreams.firstOrNull { audio ->
+                    val afmt = audio.format.lowercase()
+                    val isAudioWebM = afmt.contains("webm") || afmt.contains("opus") || afmt.contains("webma")
+                    val isAudioMp4 = afmt.contains("m4a") || afmt.contains("mp4") || afmt.contains("aac")
+                    (isVideoWebM && isAudioWebM) || (isVideoMp4 && isAudioMp4)
+                }
+                matchingContainerAudio ?: fallbackAudio
             } else {
                 fallbackAudio
             }
+
             val finalSource = if (!stream.isHls && stream.isVideoOnly && chosenAudio != null
                 && chosenAudio.url.isNotBlank()) {
                 val audioSource = mediaSourceFactory.createMediaSource(MediaItem.fromUri(chosenAudio.url))
-                MergingMediaSource(true, true, videoSource, audioSource)
+                MergingMediaSource(true, false, videoSource, audioSource)
             } else {
                 videoSource
             }
             
             // Correct ExoPlayer API order: set source → prepare → play
-            // playWhenReady must be true BEFORE prepare() so player auto-starts when buffer is ready
             exoPlayer.playWhenReady = true
             exoPlayer.setMediaSource(finalSource, currentPos)
             exoPlayer.setPlaybackSpeed(playbackSpeed)
             exoPlayer.prepare()
+            if (currentPos == 0L) {
+                exoPlayer.seekTo(0L)
+            }
             exoPlayer.play()
         }
     }
@@ -541,10 +591,34 @@ fun PlayerScreen(
     }
 
     var showCommentsSheet by remember { mutableStateOf(false) }
+    var showDownloadSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
     val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val isCollapsed = fraction < 0.5f
+
+    // ── System Immersive Mode in Landscape (100% Edge-to-Edge Fullscreen) ──
+    DisposableEffect(isLandscape) {
+        val activity = context as? android.app.Activity
+        if (activity != null) {
+            val window = activity.window
+            val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+            if (isLandscape) {
+                insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose {
+            val activity = context as? android.app.Activity
+            if (activity != null) {
+                val window = activity.window
+                val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
 
 
 
@@ -601,59 +675,65 @@ fun PlayerScreen(
                         ) { onExpand() }
                 )
 
-                // 1. Center-Left Dark Circle Play/Pause Button
-                Box(
+                // Top Control Row: Play/Pause on Left, Close on Right (Perfectly Aligned Horizontally)
+                Row(
                     modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 12.dp)
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.65f)),
-                    contentAlignment = Alignment.Center
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = {
-                            if (isPlaying) exoPlayer.pause() else exoPlayer.play()
-                        },
-                        modifier = Modifier.fillMaxSize()
+                    // Left: Play / Pause Button
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.65f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = "Play/Pause",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        IconButton(
+                            onClick = {
+                                if (isPlaying) exoPlayer.pause() else exoPlayer.play()
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Play/Pause",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
-                }
 
-                // 2. Top-Right Dark Circle Close (X) Button (Exact Image Matched)
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 8.dp, end = 8.dp)
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.65f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    IconButton(
-                        onClick = {
-                            try {
-                                exoPlayer.stop()
-                                exoPlayer.clearMediaItems()
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                            onClose()
-                        },
-                        modifier = Modifier.fillMaxSize()
+                    // Right: Close (X) Button
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.65f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        IconButton(
+                            onClick = {
+                                try {
+                                    exoPlayer.stop()
+                                    exoPlayer.clearMediaItems()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                                onClose()
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
@@ -1160,7 +1240,8 @@ fun PlayerScreen(
                                 isSubscribed = isSubscribed,
                                 onSubscribeToggle = { isSubscribed = !isSubscribed },
                                 onChannelClick = onChannelClick,
-                                likes = likesCount
+                                likes = likesCount,
+                                onDownloadClick = { showDownloadSheet = true }
                             )
                         }
 
@@ -1199,6 +1280,15 @@ fun PlayerScreen(
                     }
                 }
             }
+        }
+
+        if (showDownloadSheet) {
+            com.adzero.app.components.DownloadBottomSheet(
+                videoTitle = videoTitle,
+                videoStreams = extractedVideoStreams,
+                audioStreams = extractedAudioStreams,
+                onDismiss = { showDownloadSheet = false }
+            )
         }
 
         if (showQualityDialog) {
@@ -1285,25 +1375,30 @@ fun PlayerControlsOverlay(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(horizontal = if (isLandscape) 16.dp else 10.dp, vertical = if (isLandscape) 6.dp else 4.dp),
+                .padding(horizontal = if (isLandscape) 28.dp else 10.dp, vertical = if (isLandscape) 8.dp else 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left: Minimize Arrow
+            // Left: Back / Minimize Button + Video Title in Landscape
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.KeyboardArrowDown, "Minimize", tint = Color.White, modifier = Modifier.size(24.dp))
+                    Icon(
+                        imageVector = if (isLandscape) Icons.Default.ArrowBack else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isLandscape) "Back to Portrait" else "Minimize",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
                 if (isLandscape && videoTitle.isNotBlank()) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = videoTitle,
                         color = Color.White,
-                        fontSize = 13.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth(0.4f)
+                        modifier = Modifier.fillMaxWidth(0.55f)
                     )
                 }
             }
@@ -1389,13 +1484,13 @@ fun PlayerControlsOverlay(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(bottom = if (isLandscape) 14.dp else 12.dp)
+                .padding(bottom = if (isLandscape) 18.dp else 12.dp)
         ) {
             // Time text + Fullscreen icon row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 0.dp),
+                    .padding(horizontal = if (isLandscape) 28.dp else 12.dp, vertical = 0.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Bottom
             ) {
@@ -1569,7 +1664,8 @@ fun UnifiedChannelAndActionRow(
     isSubscribed: Boolean,
     onSubscribeToggle: () -> Unit,
     onChannelClick: (String) -> Unit,
-    likes: String
+    likes: String,
+    onDownloadClick: () -> Unit = {}
 ) {
     var isLiked by remember { mutableStateOf(false) }
     var isDisliked by remember { mutableStateOf(false) }
@@ -1672,6 +1768,14 @@ fun UnifiedChannelAndActionRow(
             }
         }
 
+        // Download pill
+        ActionPill(
+            icon = Icons.Outlined.FileDownload,
+            label = "Download",
+            surfaceColor = surfaceColor,
+            contentColor = onSurfaceColor,
+            onClick = onDownloadClick
+        )
         // Share pill
         ActionPill(icon = Icons.Outlined.Share, label = "Share", surfaceColor = surfaceColor, contentColor = onSurfaceColor)
         // Remix/AI Sparkles pill
@@ -1991,12 +2095,107 @@ fun AudioTrackDialog(
 fun SelectionDialog(title: String, options: List<String>, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         val scrollState = rememberScrollState()
-        Card(modifier = Modifier.fillMaxWidth().padding(16.dp), shape = RoundedCornerShape(16.dp)) {
-            Column(modifier = Modifier.padding(16.dp).verticalScroll(scrollState)) {
-                Text(title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 24.dp)
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)), RoundedCornerShape(24.dp)),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2E))
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                // Header Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF2661).copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.HighQuality,
+                            contentDescription = null,
+                            tint = Color(0xFFFF2661),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Text(
+                        text = title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.White
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
-                options.forEach { option ->
-                    Text(text = option, modifier = Modifier.fillMaxWidth().clickable { onSelect(option) }.padding(vertical = 12.dp), fontSize = 16.sp)
+
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(scrollState),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    options.forEach { option ->
+                        val isAuto = option.startsWith("Auto", ignoreCase = true)
+                        val isHighRes = option.contains("1080") || option.contains("2160") || option.contains("4k", ignoreCase = true)
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), RoundedCornerShape(14.dp))
+                                .clickable { onSelect(option) }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = option,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+
+                            val badgeLabel = when {
+                                isAuto -> "RECOMMENDED"
+                                isHighRes -> "HD / 4K"
+                                else -> "SD"
+                            }
+                            val badgeColor = when {
+                                isAuto -> Color(0xFFFF2661)
+                                isHighRes -> Color(0xFF6C63FF)
+                                else -> Color.White.copy(alpha = 0.6f)
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(badgeColor.copy(alpha = 0.2f))
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = badgeLabel,
+                                    color = badgeColor,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Cancel", color = Color(0xFFFF2661), fontWeight = FontWeight.Bold)
                 }
             }
         }

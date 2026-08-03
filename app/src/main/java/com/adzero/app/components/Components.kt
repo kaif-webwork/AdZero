@@ -39,8 +39,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.adzero.app.Constants
-import com.adzero.app.models.Video
+import com.adzero.app.*
+import com.adzero.app.models.*
+import com.adzero.app.data.*
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
@@ -72,38 +73,36 @@ fun CategoryChips(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(scrollState)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Constants.CATEGORIES.forEach { category ->
             val isSelected = category == selectedCategory
             val chipBg by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.onBackground
-                              else MaterialTheme.colorScheme.surfaceVariant,
+                targetValue = if (isSelected) Color(0xFFFF2661) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
                 animationSpec = tween(200),
                 label = "chipBg"
             )
             val chipTextColor by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.background
-                              else MaterialTheme.colorScheme.onBackground,
+                targetValue = if (isSelected) Color.White else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
                 animationSpec = tween(200),
                 label = "chipText"
             )
 
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(chipBg)
                     .border(
                         BorderStroke(
                             1.dp,
-                            if (isSelected) MaterialTheme.colorScheme.onBackground
-                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                            if (isSelected) Color(0xFFFF2661)
+                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
                         ),
-                        RoundedCornerShape(50)
+                        RoundedCornerShape(12.dp)
                     )
                     .clickable { onCategorySelected(category) }
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(horizontal = 16.dp, vertical = 7.dp)
             ) {
                 Text(
                     text = category,
