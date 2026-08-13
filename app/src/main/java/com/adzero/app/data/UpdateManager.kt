@@ -98,7 +98,9 @@ object UpdateManager {
                             val ghTitle = json.optString("name", "New Update Available")
                             val ghBody = json.optString("body", "")
 
-                            if (ghTag.isNotBlank()) {
+                            // Only use GitHub Release version if it's newer than what version.json gave us
+                            val ghIsNewer = ghTag.isNotBlank() && (remoteVersionName.isBlank() || isVersionNewer(ghTag, remoteVersionName))
+                            if (ghIsNewer) {
                                 remoteVersionName = ghTag
                             }
                             if (ghTitle.isNotBlank()) {
@@ -116,7 +118,10 @@ object UpdateManager {
                                     if (name.endsWith(".apk", ignoreCase = true)) {
                                         val apkAssetUrl = asset.optString("browser_download_url", "")
                                         if (apkAssetUrl.isNotBlank()) {
-                                            remoteDownloadUrl = apkAssetUrl
+                                            // Only use the APK URL from this release if the release tag matches our target version
+                                            if (ghIsNewer || remoteVersionName == ghTag) {
+                                                remoteDownloadUrl = apkAssetUrl
+                                            }
                                         }
                                         break
                                     }
