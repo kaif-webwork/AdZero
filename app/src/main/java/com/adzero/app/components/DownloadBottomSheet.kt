@@ -140,6 +140,8 @@ fun DownloadBottomSheet(
                 0 -> {
                     // MP4 Video Qualities
                     val displayVideoStreams = videoStreams.filter { it.url.isNotBlank() }
+                    val defaultAudio = audioStreams.firstOrNull { it.isOriginalTrack } ?: audioStreams.firstOrNull()
+
                     if (displayVideoStreams.isEmpty()) {
                         EmptyDownloadState("No video download streams available")
                     } else {
@@ -150,17 +152,17 @@ fun DownloadBottomSheet(
                             items(displayVideoStreams) { stream ->
                                 DownloadOptionCard(
                                     title = "${stream.quality} MP4 Video",
-                                    subtitle = if (stream.isVideoOnly) "High Quality DASH Video Stream" else "Full Video + Audio Stream",
+                                    subtitle = "Full Video + Synchronized Audio Track",
                                     badge = if (stream.quality.contains("1080") || stream.quality.contains("2160") || stream.quality.contains("4k", ignoreCase = true)) "HD / 4K" else "SD",
                                     icon = Icons.Default.Movie
                                 ) {
-                                    AppDownloadManager.downloadStream(
+                                    AppDownloadManager.downloadVideoWithAudio(
                                         context = context,
                                         videoTitle = videoTitle,
-                                        url = stream.url,
+                                        videoUrl = stream.url,
+                                        audioUrl = defaultAudio?.url,
                                         qualityOrTypeLabel = stream.quality,
-                                        isAudioOnly = false,
-                                        extension = "mp4"
+                                        isVideoOnly = stream.isVideoOnly
                                     )
                                     onDismiss()
                                 }
@@ -205,6 +207,7 @@ fun DownloadBottomSheet(
                     // Clips Download Options
                     val clipVideoStreams = videoStreams.filter { it.url.isNotBlank() }
                     val defaultStream = clipVideoStreams.firstOrNull { it.quality.contains("720") || it.quality.contains("1080") } ?: clipVideoStreams.firstOrNull()
+                    val defaultAudio = audioStreams.firstOrNull { it.isOriginalTrack } ?: audioStreams.firstOrNull()
 
                     if (defaultStream == null) {
                         EmptyDownloadState("No video streams available for clips")
@@ -227,13 +230,13 @@ fun DownloadBottomSheet(
                                 badge = "15 Sec",
                                 icon = Icons.Default.ContentCut
                             ) {
-                                AppDownloadManager.downloadStream(
+                                AppDownloadManager.downloadVideoWithAudio(
                                     context = context,
                                     videoTitle = videoTitle,
-                                    url = defaultStream.url,
+                                    videoUrl = defaultStream.url,
+                                    audioUrl = defaultAudio?.url,
                                     qualityOrTypeLabel = "15s_Clip_${defaultStream.quality}",
-                                    isAudioOnly = false,
-                                    extension = "mp4"
+                                    isVideoOnly = defaultStream.isVideoOnly
                                 )
                                 onDismiss()
                             }
@@ -244,13 +247,13 @@ fun DownloadBottomSheet(
                                 badge = "30 Sec",
                                 icon = Icons.Default.ContentCut
                             ) {
-                                AppDownloadManager.downloadStream(
+                                AppDownloadManager.downloadVideoWithAudio(
                                     context = context,
                                     videoTitle = videoTitle,
-                                    url = defaultStream.url,
+                                    videoUrl = defaultStream.url,
+                                    audioUrl = defaultAudio?.url,
                                     qualityOrTypeLabel = "30s_Clip_${defaultStream.quality}",
-                                    isAudioOnly = false,
-                                    extension = "mp4"
+                                    isVideoOnly = defaultStream.isVideoOnly
                                 )
                                 onDismiss()
                             }
@@ -261,13 +264,13 @@ fun DownloadBottomSheet(
                                 badge = "60 Sec",
                                 icon = Icons.Default.ContentCut
                             ) {
-                                AppDownloadManager.downloadStream(
+                                AppDownloadManager.downloadVideoWithAudio(
                                     context = context,
                                     videoTitle = videoTitle,
-                                    url = defaultStream.url,
+                                    videoUrl = defaultStream.url,
+                                    audioUrl = defaultAudio?.url,
                                     qualityOrTypeLabel = "60s_Clip_${defaultStream.quality}",
-                                    isAudioOnly = false,
-                                    extension = "mp4"
+                                    isVideoOnly = defaultStream.isVideoOnly
                                 )
                                 onDismiss()
                             }

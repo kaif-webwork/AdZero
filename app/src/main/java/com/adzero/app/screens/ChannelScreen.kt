@@ -9,11 +9,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -79,10 +82,10 @@ fun ChannelScreen(
                     .map { it.toVideo() }
                 
                 withContext(Dispatchers.Main) {
-                    channelVideos = items
+                    channelVideos = items.distinctBy { it.id }
                     channelNextPage = searchInfo.nextPage
                     isLoading = false
-                    items.take(6).forEach { video ->
+                    items.take(2).forEach { video ->
                         ExtractionManager.startExtraction(video, isSpeculative = true)
                     }
                 }
@@ -111,10 +114,10 @@ fun ChannelScreen(
                     .filter { it.id !in existingIds }
 
                 withContext(Dispatchers.Main) {
-                    channelVideos = channelVideos + newItems
+                    channelVideos = (channelVideos + newItems).distinctBy { it.id }
                     channelNextPage = moreInfo.nextPage
                     isMoreLoading = false
-                    newItems.take(4).forEach { video ->
+                    newItems.take(2).forEach { video ->
                         ExtractionManager.startExtraction(video, isSpeculative = true)
                     }
                 }
@@ -370,7 +373,7 @@ fun ChannelScreen(
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
-                                            imageVector = if (isGridView) Icons.Default.List else Icons.Default.GridView,
+                                            imageVector = if (isGridView) Icons.AutoMirrored.Filled.List else Icons.Default.GridView,
                                             contentDescription = "Toggle Grid/List",
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -385,7 +388,7 @@ fun ChannelScreen(
                                         verticalArrangement = Arrangement.spacedBy(12.dp),
                                         modifier = Modifier.fillMaxSize()
                                     ) {
-                                        items(channelVideos) { video ->
+                                        itemsIndexed(channelVideos, key = { index, video -> "grid_${video.id}_$index" }) { _, video ->
                                             GridVideoCard(video = video, onClick = { onVideoClick(video) })
                                         }
                                     }
@@ -395,7 +398,7 @@ fun ChannelScreen(
                                         modifier = Modifier.fillMaxSize(),
                                         contentPadding = PaddingValues(bottom = 80.dp)
                                     ) {
-                                        items(channelVideos, key = { it.id }) { video ->
+                                        itemsIndexed(channelVideos, key = { index, video -> "list_${video.id}_$index" }) { _, video ->
                                             VideoCard(video = video, onClick = { onVideoClick(video) })
                                         }
 
@@ -470,8 +473,17 @@ fun GridVideoCard(
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
         ) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val thumbModel = remember(video.id, video.thumbnailUrl) {
+                coil.request.ImageRequest.Builder(context)
+                    .data(video.thumbnailUrl)
+                    .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                    .size(360, 200)
+                    .crossfade(true)
+                    .build()
+            }
             AsyncImage(
-                model = video.thumbnailUrl,
+                model = thumbModel,
                 contentDescription = video.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop

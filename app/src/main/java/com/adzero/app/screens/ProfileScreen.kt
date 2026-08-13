@@ -30,6 +30,7 @@ import coil.compose.AsyncImage
 import com.adzero.app.data.*
 import com.adzero.app.models.*
 import com.adzero.app.theme.*
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,7 +40,6 @@ fun ProfileScreen(
     onVideoClick: (Video) -> Unit,
     onSettingsClick: () -> Unit = {}
 ) {
-    val context = LocalContext.current
     var showHistoryScreen by remember { mutableStateOf(false) }
 
     if (showHistoryScreen) {
@@ -264,9 +264,9 @@ fun ProfileScreen(
 
             item {
                 ProfileOptionRow(
-                    icon = Icons.Outlined.HelpOutline,
+                    icon = Icons.AutoMirrored.Outlined.HelpOutline,
                     title = "Help & Feedback",
-                    subtitle = "AdZero 4.0",
+                    subtitle = "AdZero 4.3",
                     onClick = {}
                 )
             }

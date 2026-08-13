@@ -20,7 +20,8 @@ object ShortsPlayerManager {
      * - bufferForPlaybackMs: 800ms (Ultra fast startup)
      */
     private val loadControl = DefaultLoadControl.Builder()
-        .setBufferDurationsMs(1_200, 15_000, 800, 1_200)
+        .setBufferDurationsMs(1_000, 12_000, 600, 1_000)
+        .setBackBuffer(5_000, true)
         .setPrioritizeTimeOverSizeThresholds(true)
         .build()
 

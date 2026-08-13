@@ -18,6 +18,7 @@ object ExtractionManager {
     val extractionState = _extractionState.asStateFlow()
 
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val activeSpeculativeCount = java.util.concurrent.atomic.AtomicInteger(0)
     
     // Track which videos the user is actually waiting for
     private val requestedVideos = ConcurrentHashMap.newKeySet<String>()
@@ -27,6 +28,11 @@ object ExtractionManager {
         
         if (!isSpeculative) {
             requestedVideos.add(normalizedId)
+        } else {
+            // Throttle speculative extractions: max 2 background speculative tasks running simultaneously
+            if (activeSpeculativeCount.get() >= 2) {
+                return
+            }
         }
 
         // Return if already cached
@@ -58,15 +64,30 @@ object ExtractionManager {
             return
         }
 
+        if (isSpeculative) {
+            activeSpeculativeCount.incrementAndGet()
+        }
+
         val job = scope.launch {
             try {
+                if (!com.adzero.app.App.isExtractorInitialized.get()) {
+                    val context = com.adzero.app.App.instance
+                    val userLang = com.adzero.app.data.ContentLanguageManager.getCurrentLanguage(context)
+                    val loc = org.schabi.newpipe.extractor.localization.Localization(userLang.languageCode, userLang.countryCode)
+                    org.schabi.newpipe.extractor.NewPipe.init(com.adzero.app.NewPipeDownloader.getInstance(com.adzero.app.App.okHttpClient), loc)
+                    com.adzero.app.App.isExtractorInitialized.set(true)
+                }
+
                 val targetUrl = if (video.videoUrl.startsWith("http")) video.videoUrl 
                                 else "https://www.youtube.com/watch?v=$normalizedId"
 
-                // Fetch Stream and Comments in parallel
+                // Fetch Stream and Comments (skip Comments for speculative requests to save network & CPU)
                 val infoDeferred = async { StreamInfo.getInfo(targetUrl) }
                 val commentsDeferred = async { 
-                    try { CommentsInfo.getInfo(targetUrl) } catch (e: Exception) { null }
+                    if (isSpeculative) null
+                    else {
+                        try { CommentsInfo.getInfo(targetUrl) } catch (e: Exception) { null }
+                    }
                 }
 
                 val info = infoDeferred.await()
@@ -80,10 +101,13 @@ object ExtractionManager {
             } catch (e: Exception) {
                 if (requestedVideos.contains(normalizedId)) {
                     e.printStackTrace()
-                    _extractionState.value = ExtractionResult.Error(normalizedId, e.message ?: "Unknown error")
+                    _extractionState.value = ExtractionResult.Error(normalizedId, e.message ?: "Extraction failed. Please try again.")
                 }
             } finally {
                 activeJobs.remove(normalizedId)
+                if (isSpeculative) {
+                    activeSpeculativeCount.decrementAndGet()
+                }
             }
         }
         activeJobs[normalizedId] = job

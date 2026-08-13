@@ -10,6 +10,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -156,7 +157,11 @@ fun VideoCard(
                 val primaryUrl = if (video.thumbnailUrl.startsWith("//")) "https:${video.thumbnailUrl}" else video.thumbnailUrl
                 coil.request.ImageRequest.Builder(context)
                     .data(primaryUrl)
-                    .crossfade(true)
+                    .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                    .size(640, 360) // Downsample thumbnail to display bounds — reduces RAM usage by ~70%
+                    .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                    .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                    .crossfade(150)
                     .build()
             }
 
@@ -205,9 +210,18 @@ fun VideoCard(
                 .padding(start = 12.dp, end = 0.dp, top = 10.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            val context = LocalContext.current
+            val avatarModel = remember(video.channelAvatarUrl) {
+                coil.request.ImageRequest.Builder(context)
+                    .data(video.channelAvatarUrl)
+                    .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                    .size(96, 96)
+                    .crossfade(true)
+                    .build()
+            }
             // Channel Avatar
             AsyncImage(
-                model = video.channelAvatarUrl,
+                model = avatarModel,
                 contentDescription = video.channelName,
                 modifier = Modifier
                     .size(36.dp)
@@ -398,7 +412,7 @@ fun ShortsShelf(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
         ) {
-            items(shorts, key = { "short_${it.id}" }) { short ->
+            itemsIndexed(shorts, key = { index, short -> "short_${short.id}_$index" }) { _, short ->
                 Box(
                     modifier = Modifier
                         .width(140.dp)
@@ -406,8 +420,18 @@ fun ShortsShelf(
                         .clip(RoundedCornerShape(14.dp))
                         .clickable { onShortClick(short) }
                 ) {
+                    val context = LocalContext.current
+                    val shortThumbModel = remember(short.id, short.thumbnailUrl) {
+                        coil.request.ImageRequest.Builder(context)
+                            .data(short.thumbnailUrl)
+                            .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                            .size(280, 480)
+                            .crossfade(true)
+                            .build()
+                    }
+
                     AsyncImage(
-                        model = short.thumbnailUrl,
+                        model = shortThumbModel,
                         contentDescription = short.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop

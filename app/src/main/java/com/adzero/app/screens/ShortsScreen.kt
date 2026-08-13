@@ -21,7 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
@@ -36,7 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -183,12 +183,24 @@ fun ShortsScreen(
         }
     }
 
-    // Pre-extract upcoming shorts as user scrolls for ZERO buffering
+    // Pre-extract upcoming shorts & preload thumbnails as user scrolls for ZERO buffering & 0ms swipe lag
     LaunchedEffect(pagerState.currentPage, shortsList) {
         val current = pagerState.currentPage
-        for (i in (current + 1)..(current + 3)) {
+        for (i in (current + 1)..(current + 4)) {
             if (i in shortsList.indices) {
-                com.adzero.app.data.ExtractionManager.startExtraction(shortsList[i], isSpeculative = true)
+                val s = shortsList[i]
+                com.adzero.app.data.ExtractionManager.startExtraction(s, isSpeculative = true)
+                if (s.thumbnailUrl.isNotBlank()) {
+                    coil.Coil.imageLoader(context).enqueue(
+                        coil.request.ImageRequest.Builder(context)
+                            .data(s.thumbnailUrl)
+                            .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                            .size(280, 480)
+                            .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                            .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                            .build()
+                    )
+                }
             }
         }
     }
@@ -215,15 +227,13 @@ fun ShortsScreen(
         } else {
             VerticalPager(
                 state = pagerState,
+                key = { page -> if (page in shortsList.indices) "${shortsList[page].id}_$page" else page.toString() },
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 val isVisible = page == pagerState.currentPage
                 ShortsItem(
                     video = shortsList[page],
-                    isVisible = isVisible,
-                    onCommentsClick = {
-                        Toast.makeText(context, "Comments feature available in player view", Toast.LENGTH_SHORT).show()
-                    }
+                    isVisible = isVisible
                 )
             }
         }
@@ -274,8 +284,7 @@ fun ShortsScreen(
 @Composable
 fun ShortsItem(
     video: Video,
-    isVisible: Boolean,
-    onCommentsClick: () -> Unit
+    isVisible: Boolean
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -385,8 +394,17 @@ fun ShortsItem(
             }
     ) {
         // High-res full-bleed thumbnail displayed quietly in background until video is ready
+        val shortBgModel = remember(video.id, video.thumbnailUrl) {
+            coil.request.ImageRequest.Builder(context)
+                .data(video.thumbnailUrl)
+                .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                .size(480, 854)
+                .crossfade(true)
+                .build()
+        }
+
         AsyncImage(
-            model = video.thumbnailUrl,
+            model = shortBgModel,
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
@@ -502,7 +520,7 @@ fun ShortsItem(
                 tint = if (isLiked) Color(0xFF3EA6FF) else Color.White,
                 onClick = { isLiked = !isLiked }
             )
-            ShortsAction(icon = Icons.Default.Comment, label = "Comments", onClick = { showCommentsSheet = true })
+            ShortsAction(icon = Icons.AutoMirrored.Filled.Comment, label = "Comments", onClick = { showCommentsSheet = true })
             ShortsAction(
                 icon = Icons.Default.Share,
                 label = "Share",

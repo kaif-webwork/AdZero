@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -76,7 +77,7 @@ fun HistoryScreen(
                     .background(MaterialTheme.colorScheme.background),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
-                items(history) { video ->
+                itemsIndexed(history, key = { index, video -> "hist_vid_${video.id}_$index" }) { _, video ->
                     VideoCard(
                         video = video,
                         onClick = { onVideoClick(video) }

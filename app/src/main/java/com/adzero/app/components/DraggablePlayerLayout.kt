@@ -56,8 +56,12 @@ fun DraggablePlayerLayout(
             }
         }
 
-        val offset = state.offset.takeIf { !it.isNaN() } ?: 0f
-        val fraction = (offset / collapseRange).coerceIn(0f, 1f)
+        val offsetState = remember { derivedStateOf { state.offset.takeIf { !it.isNaN() } ?: 0f } }
+        val fractionState = remember(collapseRange) {
+            derivedStateOf {
+                if (collapseRange > 0) (offsetState.value / collapseRange).coerceIn(0f, 1f) else 0f
+            }
+        }
 
         // Main App Content (Home feed, etc.)
         Box(modifier = Modifier.fillMaxSize()) {
@@ -66,8 +70,8 @@ fun DraggablePlayerLayout(
 
         // Draggable Player Overlay
         if (state.currentValue != PlayerState.Closed || state.targetValue != PlayerState.Closed) {
-            var drag2DX by remember { mutableStateOf(0f) }
-            var drag2DY by remember { mutableStateOf(0f) }
+            var drag2DX by remember { mutableFloatStateOf(0f) }
+            var drag2DY by remember { mutableFloatStateOf(0f) }
 
             // Reset offsets when expanded
             LaunchedEffect(state.currentValue) {
@@ -102,7 +106,7 @@ fun DraggablePlayerLayout(
 
             Box(
                 modifier = Modifier
-                    .offset { IntOffset(0, if (state.currentValue == PlayerState.Collapsed) 0 else offset.roundToInt()) }
+                    .offset { IntOffset(0, if (state.currentValue == PlayerState.Collapsed) 0 else offsetState.value.roundToInt()) }
                     .graphicsLayer {
                         translationX = drag2DX
                         translationY = drag2DY
@@ -115,7 +119,7 @@ fun DraggablePlayerLayout(
                         )
                     )
             ) {
-                playerContent(1f - fraction, dragModifier)
+                playerContent(1f - fractionState.value, dragModifier)
             }
         }
     }

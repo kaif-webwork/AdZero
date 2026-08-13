@@ -25,22 +25,29 @@ import coil.request.CachePolicy
 class App : Application(), ImageLoaderFactory {
 
     companion object {
+        lateinit var instance: App
+            private set
         val isExtractorInitialized = AtomicBoolean(false)
         lateinit var okHttpClient: OkHttpClient
             private set
     }
 
     override fun newImageLoader(): ImageLoader {
+        val activityManager = getSystemService(ACTIVITY_SERVICE) as? android.app.ActivityManager
+        val isLowRamDevice = activityManager?.isLowRamDevice == true
+
         return ImageLoader.Builder(this)
+            .allowHardware(!isLowRamDevice) // Hardware bitmaps can crash or lag low-RAM devices
+            .bitmapConfig(android.graphics.Bitmap.Config.RGB_565) // 50% RAM reduction per bitmap compared to ARGB_8888
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.15) // 15% RAM allocation — safe for 1.5GB/2GB low-end devices
+                    .maxSizePercent(if (isLowRamDevice) 0.10 else 0.15) // Safe RAM limit
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(50L * 1024L * 1024L) // 50 MB disk cache
+                    .maxSizeBytes(40L * 1024L * 1024L) // 40 MB disk cache
                     .build()
             }
             .respectCacheHeaders(false)
@@ -50,6 +57,7 @@ class App : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         
         okHttpClient = OkHttpClient.Builder()
             .readTimeout(60, TimeUnit.SECONDS)
@@ -57,27 +65,29 @@ class App : Application(), ImageLoaderFactory {
             .writeTimeout(60, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
-            .connectionPool(okhttp3.ConnectionPool(20, 5, TimeUnit.MINUTES))
+            .retryOnConnectionFailure(true)
+            .connectionPool(okhttp3.ConnectionPool(50, 10, TimeUnit.MINUTES))
             .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
             .build()
 
-        // Initialize NewPipe and Player on background threads
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val userLang = com.adzero.app.data.ContentLanguageManager.getCurrentLanguage(this@App)
-                val loc = Localization(userLang.languageCode, userLang.countryCode)
-                NewPipe.init(NewPipeDownloader.getInstance(okHttpClient), loc)
-                isExtractorInitialized.set(true)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        // Synchronously initialize NewPipe extractor to avoid race condition with UI screens
+        try {
+            val userLang = com.adzero.app.data.ContentLanguageManager.getCurrentLanguage(this)
+            val loc = Localization(userLang.languageCode, userLang.countryCode)
+            NewPipe.init(NewPipeDownloader.getInstance(okHttpClient), loc)
+            isExtractorInitialized.set(true)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
         
-        // Warm up history, quality settings, player & pre-warm feed cache
-        com.adzero.app.data.HistoryManager.init(this)
-        com.adzero.app.data.PlayerQualityManager.init(this)
-        com.adzero.app.data.WarmFeedCache.prewarm(this)
-        GlobalPlayerManager.getPlayer(this)
+        try {
+            com.adzero.app.data.HistoryManager.init(this)
+            com.adzero.app.data.PlayerQualityManager.init(this)
+            com.adzero.app.data.WarmFeedCache.prewarm(this)
+            GlobalPlayerManager.getPlayer(this)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
     
     override fun onTrimMemory(level: Int) {
@@ -138,12 +148,15 @@ class NewPipeDownloader private constructor(private val client: OkHttpClient) : 
         val requestBuilder = okhttp3.Request.Builder()
             .method(httpMethod, requestBody)
             .url(url)
-            .addHeader("User-Agent", USER_AGENT)
 
         for ((headerName, headerValueList) in headers) {
             for (headerValue in headerValueList) {
                 requestBuilder.addHeader(headerName, headerValue)
             }
+        }
+
+        if (headers["User-Agent"] == null) {
+            requestBuilder.header("User-Agent", USER_AGENT)
         }
 
         val response = client.newCall(requestBuilder.build()).execute()

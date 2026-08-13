@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,7 +48,6 @@ fun SubscriptionsScreen(
     onChannelClick: (String) -> Unit = {},
     onSearchClick: () -> Unit = {}
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     // Subscribed channels map from SubscriptionManager (local user subscriptions)
@@ -74,7 +74,7 @@ fun SubscriptionsScreen(
                             Creator(
                                 id = item.url,
                                 name = item.name ?: "Channel",
-                                avatarUrl = item.thumbnails?.firstOrNull()?.url
+                                avatarUrl = item.thumbnails.firstOrNull()?.url
                                     ?: "https://www.gstatic.com/youtube/img/creator/avatar/default_64.png",
                                 isLive = index == 0,
                                 hasStory = index < 4
@@ -90,7 +90,7 @@ fun SubscriptionsScreen(
 
                     withContext(Dispatchers.Main) {
                         channelsState = extractedCreators
-                        feedVideosState = feedVideos
+                        feedVideosState = feedVideos.distinctBy { it.id }
                         isLoading = false
                     }
                 } catch (e: Exception) {
@@ -173,7 +173,7 @@ fun SubscriptionsScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(displayChannels) { creator ->
+                    itemsIndexed(displayChannels, key = { index, creator -> "creator_${creator.id}_$index" }) { _, creator ->
                         SubscribedCreatorAvatarItem(
                             creator = creator,
                             onChannelClick = onChannelClick
@@ -210,7 +210,7 @@ fun SubscriptionsScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 64.dp)
                     ) {
-                        items(feedVideosState, key = { it.id }, contentType = { "video_card" }) { video ->
+                        itemsIndexed(feedVideosState, key = { index, video -> "sub_${video.id}_$index" }, contentType = { _, _ -> "video_card" }) { _, video ->
                             VideoCard(
                                 video = video,
                                 onClick = { onVideoClick(video) },

@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
 import com.adzero.app.App
+import com.adzero.app.Constants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +30,7 @@ data class UpdateInfo(
 )
 
 object UpdateManager {
-    private const val REPO_RELEASES_URL = "https://api.github.com/repos/kaif-webwork/AdZero/releases/latest"
+    private const val GITHUB_RELEASES_URL = "https://api.github.com/repos/kaif-webwork/AdZero/releases/latest"
 
     private val _updateState = MutableStateFlow(UpdateInfo())
     val updateState: StateFlow<UpdateInfo> = _updateState
@@ -37,53 +38,105 @@ object UpdateManager {
     suspend fun checkForUpdates(context: Context, isManualCheck: Boolean = false): UpdateInfo {
         return withContext(Dispatchers.IO) {
             try {
-                val currentVersion = try {
-                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+                val packageInfo = try {
+                    context.packageManager.getPackageInfo(context.packageName, 0)
                 } catch (e: Exception) {
-                    "1.0.0"
+                    null
                 }
 
-                val request = Request.Builder()
-                    .url(REPO_RELEASES_URL)
-                    .header("Accept", "application/vnd.github.v3+json")
-                    .header("User-Agent", "AdZero-App")
-                    .build()
+                val currentVersionName = packageInfo?.versionName ?: "1.0.0"
+                val currentVersionCode = packageInfo?.let {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        it.longVersionCode.toInt()
+                    } else {
+                        @Suppress("DEPRECATION")
+                        it.versionCode
+                    }
+                } ?: 1
 
-                val response = App.okHttpClient.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    val info = UpdateInfo(error = "Unable to check for updates")
-                    if (isManualCheck) _updateState.value = info
-                    return@withContext info
-                }
+                var remoteVersionCode = 0
+                var remoteVersionName = ""
+                var remoteDownloadUrl = ""
+                var remoteReleaseNotes = ""
+                var remoteTitle = "New Update Available"
 
-                val jsonStr = response.body?.string() ?: ""
-                if (jsonStr.isBlank()) return@withContext UpdateInfo()
-
-                val json = JSONObject(jsonStr)
-                val tagName = json.optString("tag_name", "").trimStart('v')
-                val title = json.optString("name", "New Release")
-                val body = json.optString("body", "Bug fixes and performance improvements.")
-                
-                var apkUrl = ""
-                val assets = json.optJSONArray("assets")
-                if (assets != null) {
-                    for (i in 0 until assets.length()) {
-                        val asset = assets.getJSONObject(i)
-                        val name = asset.optString("name", "")
-                        if (name.endsWith(".apk", ignoreCase = true)) {
-                            apkUrl = asset.optString("browser_download_url", "")
-                            break
+                // 1. Try version.json from raw GitHub repository first for immediate fast check
+                try {
+                    val request = Request.Builder()
+                        .url(Constants.UPDATE_JSON_URL)
+                        .header("User-Agent", "AdZero-App")
+                        .build()
+                    val response = App.okHttpClient.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val bodyStr = response.body?.string() ?: ""
+                        if (bodyStr.isNotBlank()) {
+                            val json = JSONObject(bodyStr)
+                            remoteVersionCode = json.optInt("versionCode", 0)
+                            remoteVersionName = json.optString("versionName", "").trimStart('v')
+                            remoteDownloadUrl = json.optString("downloadUrl", "")
+                            remoteReleaseNotes = json.optString("releaseNotes", "")
                         }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
 
-                val hasNewerVersion = isVersionNewer(tagName, currentVersion)
+                // 2. Try GitHub Releases API for direct APK asset URL & full release notes
+                try {
+                    val request = Request.Builder()
+                        .url(GITHUB_RELEASES_URL)
+                        .header("Accept", "application/vnd.github.v3+json")
+                        .header("User-Agent", "AdZero-App")
+                        .build()
+
+                    val response = App.okHttpClient.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val jsonStr = response.body?.string() ?: ""
+                        if (jsonStr.isNotBlank()) {
+                            val json = JSONObject(jsonStr)
+                            val ghTag = json.optString("tag_name", "").trimStart('v')
+                            val ghTitle = json.optString("name", "New Update Available")
+                            val ghBody = json.optString("body", "")
+
+                            if (ghTag.isNotBlank()) {
+                                remoteVersionName = ghTag
+                            }
+                            if (ghTitle.isNotBlank()) {
+                                remoteTitle = ghTitle
+                            }
+                            if (ghBody.isNotBlank()) {
+                                remoteReleaseNotes = ghBody
+                            }
+
+                            val assets = json.optJSONArray("assets")
+                            if (assets != null) {
+                                for (i in 0 until assets.length()) {
+                                    val asset = assets.getJSONObject(i)
+                                    val name = asset.optString("name", "")
+                                    if (name.endsWith(".apk", ignoreCase = true)) {
+                                        val apkAssetUrl = asset.optString("browser_download_url", "")
+                                        if (apkAssetUrl.isNotBlank()) {
+                                            remoteDownloadUrl = apkAssetUrl
+                                        }
+                                        break
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                val hasNewerVersion = (remoteVersionCode > currentVersionCode) || 
+                                     isVersionNewer(remoteVersionName, currentVersionName)
+
                 val info = UpdateInfo(
-                    hasUpdate = hasNewerVersion && apkUrl.isNotBlank(),
-                    versionName = tagName,
-                    releaseTitle = title,
-                    changelog = body,
-                    downloadUrl = apkUrl
+                    hasUpdate = hasNewerVersion && (remoteDownloadUrl.isNotBlank() || remoteVersionName.isNotBlank()),
+                    versionName = if (remoteVersionName.isNotBlank()) remoteVersionName else if (remoteVersionCode > 0) "v$remoteVersionCode" else "Latest",
+                    releaseTitle = remoteTitle,
+                    changelog = if (remoteReleaseNotes.isNotBlank()) remoteReleaseNotes else "New performance optimizations, 0-lag video playback, and bug fixes.",
+                    downloadUrl = if (remoteDownloadUrl.isNotBlank()) remoteDownloadUrl else "https://github.com/kaif-webwork/AdZero/releases/latest"
                 )
 
                 _updateState.value = info
@@ -100,6 +153,14 @@ object UpdateManager {
     suspend fun downloadAndInstallApk(context: Context, downloadUrl: String) {
         withContext(Dispatchers.IO) {
             try {
+                if (!downloadUrl.endsWith(".apk", ignoreCase = true)) {
+                    // Open browser for web release links
+                    withContext(Dispatchers.Main) {
+                        openBrowserUrl(context, downloadUrl)
+                    }
+                    return@withContext
+                }
+
                 _updateState.value = _updateState.value.copy(isDownloading = true, downloadProgress = 0.05f)
 
                 val destinationFile = File(context.externalCacheDir ?: context.cacheDir, "AdZero_update.apk")
@@ -147,6 +208,10 @@ object UpdateManager {
                     isDownloading = false,
                     error = "Download failed: ${e.localizedMessage}"
                 )
+                // Fallback to browser download if in-app download failed
+                withContext(Dispatchers.Main) {
+                    openBrowserUrl(context, downloadUrl)
+                }
             }
         }
     }
@@ -168,11 +233,19 @@ object UpdateManager {
         } catch (e: Exception) {
             e.printStackTrace()
             _updateState.value.downloadUrl.takeIf { it.isNotBlank() }?.let { url ->
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(browserIntent)
+                openBrowserUrl(context, url)
             }
+        }
+    }
+
+    private fun openBrowserUrl(context: Context, url: String) {
+        try {
+            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(browserIntent)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -184,6 +257,8 @@ object UpdateManager {
         if (latest.isBlank()) return false
         val latestClean = latest.replace(Regex("[^0-9.]"), "")
         val currentClean = current.replace(Regex("[^0-9.]"), "")
+
+        if (latestClean.isBlank() || currentClean.isBlank()) return false
 
         val lParts = latestClean.split(".").mapNotNull { it.toIntOrNull() }
         val cParts = currentClean.split(".").mapNotNull { it.toIntOrNull() }
@@ -198,3 +273,4 @@ object UpdateManager {
         return false
     }
 }
+

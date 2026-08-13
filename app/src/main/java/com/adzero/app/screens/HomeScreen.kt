@@ -49,7 +49,6 @@ fun HomeScreen(
     onVideoClick: (Video) -> Unit,
     onSearchClick: () -> Unit,
     onChannelClick: (String) -> Unit = {},
-    onProfileClick: () -> Unit = {},
     onShortsClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -169,9 +168,9 @@ fun HomeScreen(
 
                 withContext(Dispatchers.Main) {
                     if (appended.isNotEmpty()) {
-                        videosState = videosState + appended
-                        // Speculatively extract next batch
-                        appended.take(4).forEach { ExtractionManager.startExtraction(it, isSpeculative = true) }
+                        videosState = (videosState + appended).distinctBy { it.id }
+                        // Speculatively extract next 2 items in background
+                        appended.take(2).forEach { ExtractionManager.startExtraction(it, isSpeculative = true) }
                     }
                     isMoreLoading = false
                 }
@@ -199,17 +198,37 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(selectedCategory) {
-        isLoading = true
-        videosState = emptyList() // Immediately clear old category videos to prevent showing wrong data
-        shortsState = emptyList()
+    // Proactively pre-load upcoming video thumbnails into Coil cache for liquid 120Hz smooth scrolling
+    LaunchedEffect(listState.firstVisibleItemIndex, videosState) {
+        val currentIndex = listState.firstVisibleItemIndex
+        val nextVideos = videosState.drop(currentIndex + 1).take(5)
+        nextVideos.forEach { v ->
+            val url = if (v.thumbnailUrl.startsWith("//")) "https:${v.thumbnailUrl}" else v.thumbnailUrl
+            if (url.isNotBlank()) {
+                coil.Coil.imageLoader(context).enqueue(
+                    coil.request.ImageRequest.Builder(context)
+                        .data(url)
+                        .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
+                        .size(640, 360)
+                        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .build()
+                )
+            }
+        }
+    }
 
+    LaunchedEffect(selectedCategory) {
         val fastCached = com.adzero.app.data.FastContentStore.getFeed(context, selectedCategory)
         val warmCached = com.adzero.app.data.WarmFeedCache.getFeed(selectedCategory)
         val initialFeed = if (fastCached.isNotEmpty()) fastCached else warmCached
+
         if (!initialFeed.isNullOrEmpty()) {
             videosState = initialFeed
             isLoading = false
+        } else {
+            isLoading = true
+            videosState = emptyList()
         }
 
         withContext(Dispatchers.IO) {
@@ -352,12 +371,55 @@ fun HomeScreen(
                     onCategorySelected = { selectedCategory = it }
                 )
 
-                if (isLoading || videosState.isEmpty()) {
+                if (isLoading && videosState.isEmpty()) {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 80.dp)
                     ) {
                         items(5) { SkeletonLoader() }
+                    }
+                } else if (videosState.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudOff,
+                                contentDescription = "No Content",
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Unable to load videos",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Check your connection and try again",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Button(
+                                onClick = {
+                                    isLoading = true
+                                    refreshHomeFeed()
+                                },
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Refresh, contentDescription = "Retry", modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Retry")
+                            }
+                        }
                     }
                 } else {
                     LazyColumn(
@@ -367,7 +429,7 @@ fun HomeScreen(
                     ) {
                             itemsIndexed(
                                 items = videosState,
-                                key = { _, video -> video.id },
+                                key = { index, video -> "${video.id}_$index" },
                                 contentType = { _, _ -> "video_card" }
                             ) { index, video ->
                                 VideoCard(
@@ -378,14 +440,6 @@ fun HomeScreen(
                                     },
                                     onChannelClick = onChannelClick
                                 )
-
-                                // Speculative prefetch: extract next 3 videos as user scrolls past index 4+
-                                if (index >= 4) {
-                                    val nextBatch = videosState.drop(index + 1).take(3)
-                                    LaunchedEffect(index) {
-                                        nextBatch.forEach { ExtractionManager.startExtraction(it, isSpeculative = true) }
-                                    }
-                                }
 
                                 // Inject Shorts shelf after the 2nd video (YouTube-style)
                                 if (index == 1 && shortsState.isNotEmpty()) {

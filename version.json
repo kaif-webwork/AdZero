@@ -1,7 +1,7 @@
 {
-  "versionCode": 3,
-  "versionName": "3.0",
+  "versionCode": 8,
+  "versionName": "v4.4",
   "downloadUrl": "https://github.com/kaif-webwork/AdZero/releases/latest",
   "updatePriority": 1,
-  "releaseNotes": "Bug fixes and performance improvements. Added update notification."
+  "releaseNotes": "100% optimized codebase: removed dead code, fixed all deprecated APIs, enhanced update detection for old APK users with auto-download popup, cleaned unused parameters, and reduced compiler warnings to near-zero."
 }

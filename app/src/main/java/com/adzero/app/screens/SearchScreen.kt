@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,11 +12,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -135,7 +136,7 @@ fun SearchScreen(
                     val nextPage = searchInfo.nextPage
 
                     withContext(Dispatchers.Main) {
-                        searchResultsState = videos
+                        searchResultsState = videos.distinctBy { it.id }
                         searchNextPage = nextPage
                         isSearching = false
                     }
@@ -166,7 +167,7 @@ fun SearchScreen(
                 withContext(Dispatchers.Main) {
                     val currentIds = searchResultsState.map { it.id }.toSet()
                     val filteredNew = newVideos.filterNot { currentIds.contains(it.id) }
-                    searchResultsState = searchResultsState + filteredNew
+                    searchResultsState = (searchResultsState + filteredNew).distinctBy { it.id }
                     searchNextPage = nextPage
                     isMoreLoading = false
                 }
@@ -211,7 +212,7 @@ fun SearchScreen(
                         modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = MaterialTheme.colorScheme.onBackground
                         )
@@ -321,12 +322,26 @@ fun SearchScreen(
                         Text("No results found for \"$searchQuery\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
+                    val shouldLoadMoreInner by remember {
+                        derivedStateOf {
+                            val totalItems = searchListState.layoutInfo.totalItemsCount
+                            val lastVisibleItem = searchListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            totalItems > 0 && lastVisibleItem >= totalItems - 4
+                        }
+                    }
+
+                    LaunchedEffect(shouldLoadMoreInner) {
+                        if (shouldLoadMoreInner && !isMoreLoading && searchNextPage != null) {
+                            loadMoreSearchResults()
+                        }
+                    }
+
                     LazyColumn(
                         state = searchListState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 80.dp)
                     ) {
-                        items(results, key = { it.id }, contentType = { "video_card" }) { video ->
+                        itemsIndexed(results, key = { index, video -> "${video.id}_$index" }, contentType = { _, _ -> "video_card" }) { _, video ->
                             VideoCard(
                                 video = video,
                                 onClick = { 
@@ -369,7 +384,7 @@ fun SearchScreen(
                             )
                         }
 
-                        items(liveSuggestions) { suggestion ->
+                        itemsIndexed(liveSuggestions, key = { index, item -> "sug_${index}_$item" }) { _, suggestion ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -381,7 +396,7 @@ fun SearchScreen(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(imageVector = Icons.Default.TrendingUp, contentDescription = "Suggestion", tint = MaterialTheme.colorScheme.primary)
+                                Icon(imageVector = Icons.AutoMirrored.Filled.TrendingUp, contentDescription = "Suggestion", tint = MaterialTheme.colorScheme.primary)
                                 Text(text = suggestion, fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground)
                             }
                         }
@@ -408,7 +423,7 @@ fun SearchScreen(
                             }
                         }
 
-                        items(HistoryManager.searchHistory) { historyItem ->
+                        itemsIndexed(HistoryManager.searchHistory, key = { index, item -> "hist_${index}_$item" }) { _, historyItem ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -455,7 +470,7 @@ fun SearchScreen(
                             )
                         }
 
-                        items(trendingList) { trendingItem ->
+                        itemsIndexed(trendingList, key = { index, item -> "trend_${index}_$item" }) { _, trendingItem ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -467,7 +482,7 @@ fun SearchScreen(
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(imageVector = Icons.Default.TrendingUp, contentDescription = "Trending", tint = Color(0xFFFF0055))
+                                Icon(imageVector = Icons.AutoMirrored.Filled.TrendingUp, contentDescription = "Trending", tint = Color(0xFFFF0055))
                                 Text(
                                     text = trendingItem,
                                     color = MaterialTheme.colorScheme.onBackground,

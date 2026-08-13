@@ -26,12 +26,18 @@ object WarmFeedCache {
                 val topics = listOf(
                     "All" to "Trending India 2026",
                     "Shorts" to "youtube shorts trending",
-                    "Gaming" to "Gaming Highlights 2026",
-                    "Music" to "New Music Videos 2026",
-                    "Tech" to "Tech Reviews 2026"
+                    "Gaming" to "GTA 6 gameplay official",
+                    "Music" to "New Music Video 2026",
+                    "Live" to "Live stream 24/7",
+                    "Podcasts" to "The Ranveer Show podcast",
+                    "Technology" to "MKBHD Smartphone Review 2026",
+                    "Education" to "Veritasium science experiment",
+                    "Movies" to "Official Movie Trailer 2026",
+                    "News" to "Aaj Tak Live News Today",
+                    "Sports" to "India vs Australia Cricket Highlights"
                 )
 
-                // Fetch all feeds in parallel with async/awaitAll for 0ms load speed
+                // Fetch all category feeds in parallel for 0ms instant category switching
                 val deferreds = topics.map { (key, query) ->
                     async {
                         try {
@@ -40,13 +46,13 @@ object WarmFeedCache {
                             val items = info.relatedItems
                                 ?.filterIsInstance<StreamInfoItem>()
                                 ?.map { it.toVideo() }
-                                ?.shuffled() ?: emptyList()
+                                ?.distinctBy { it.id } ?: emptyList()
 
                             if (items.isNotEmpty()) {
                                 feedCache[key] = items
 
-                                // Speculative extraction of top 5 videos for 0ms instant playback
-                                items.take(5).forEach { video ->
+                                // Speculative extraction of top 3 videos for 0ms instant playback
+                                items.take(3).forEach { video ->
                                     ExtractionManager.startExtraction(video, isSpeculative = true)
                                 }
                             }
@@ -64,10 +70,6 @@ object WarmFeedCache {
     }
 
     fun getFeed(category: String): List<Video>? {
-        val cached = feedCache[category]
-        if (!cached.isNullOrEmpty()) {
-            return cached
-        }
-        return feedCache["All"]
+        return feedCache[category]
     }
 }

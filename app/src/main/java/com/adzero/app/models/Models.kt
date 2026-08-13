@@ -106,8 +106,8 @@ fun org.schabi.newpipe.extractor.stream.StreamInfoItem.toVideo(): Video {
         else                           -> ""
     }
 
-    val rawThumb = thumbnails?.maxByOrNull { it.width }?.url
-        ?: thumbnails?.lastOrNull()?.url
+    val rawThumb = thumbnails.maxByOrNull { it.width }?.url
+        ?: thumbnails.lastOrNull()?.url
         ?: "https://i.ytimg.com/vi/$extractedId/hqdefault.jpg"
 
     val cleanThumb = when {
@@ -121,7 +121,7 @@ fun org.schabi.newpipe.extractor.stream.StreamInfoItem.toVideo(): Video {
         title = name ?: "",
         thumbnailUrl = cleanThumb,
         channelName = uploaderName ?: "",
-        channelAvatarUrl = uploaderAvatars?.maxByOrNull { it.width }?.url ?: uploaderAvatars?.firstOrNull()?.url ?: "https://www.gstatic.com/youtube/img/creator/avatar/default_64.png",
+        channelAvatarUrl = uploaderAvatars.maxByOrNull { it.width }?.url ?: uploaderAvatars.firstOrNull()?.url ?: "https://www.gstatic.com/youtube/img/creator/avatar/default_64.png",
         views = viewsStr,
         uploadDate = textualUploadDate ?: "",
         duration = durationStr,
