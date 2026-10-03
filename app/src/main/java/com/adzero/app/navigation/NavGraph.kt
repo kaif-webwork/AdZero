@@ -112,7 +112,7 @@ fun MainAppNavigation(
         com.adzero.app.data.UpdateManager.checkForUpdates(context)
     }
 
-    if (updateState.hasUpdate || updateState.isDownloading) {
+    if (updateState.hasUpdate || updateState.isDownloading || updateState.isDownloaded) {
         com.adzero.app.components.UpdateDialog(
             updateInfo = updateState,
             onUpdateClick = {

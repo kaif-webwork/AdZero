@@ -158,28 +158,76 @@ object UpdateManager {
     suspend fun downloadAndInstallApk(context: Context, downloadUrl: String) {
         withContext(Dispatchers.IO) {
             try {
-                if (!downloadUrl.endsWith(".apk", ignoreCase = true)) {
-                    // Open browser for web release links
-                    withContext(Dispatchers.Main) {
-                        openBrowserUrl(context, downloadUrl)
-                    }
-                    return@withContext
-                }
+                _updateState.value = _updateState.value.copy(
+                    isDownloading = true,
+                    downloadProgress = 0.05f,
+                    error = null
+                )
 
-                _updateState.value = _updateState.value.copy(isDownloading = true, downloadProgress = 0.05f)
+                // 1. Resolve direct APK URL if given a web/release link
+                var targetApkUrl = downloadUrl.trim()
+                if (!targetApkUrl.endsWith(".apk", ignoreCase = true)) {
+                    var resolvedFromGh: String? = null
+                    try {
+                        val ghReq = Request.Builder()
+                            .url("https://api.github.com/repos/kaif-webwork/AdZero/releases/latest")
+                            .header("Accept", "application/vnd.github.v3+json")
+                            .header("User-Agent", "AdZero-App")
+                            .build()
+                        val ghResp = App.okHttpClient.newCall(ghReq).execute()
+                        if (ghResp.isSuccessful) {
+                            val json = JSONObject(ghResp.body?.string() ?: "")
+                            val assets = json.optJSONArray("assets")
+                            if (assets != null) {
+                                for (i in 0 until assets.length()) {
+                                    val asset = assets.getJSONObject(i)
+                                    val name = asset.optString("name", "")
+                                    if (name.endsWith(".apk", ignoreCase = true)) {
+                                        val apkAssetUrl = asset.optString("browser_download_url", "")
+                                        if (apkAssetUrl.isNotBlank()) {
+                                            resolvedFromGh = apkAssetUrl
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    targetApkUrl = resolvedFromGh ?: "https://github.com/kaif-webwork/AdZero/releases/latest/download/adzero.apk"
+                }
 
                 val destinationFile = File(context.externalCacheDir ?: context.cacheDir, "AdZero_update.apk")
                 if (destinationFile.exists()) {
                     destinationFile.delete()
                 }
 
-                val request = Request.Builder()
-                    .url(downloadUrl)
-                    .header("User-Agent", "AdZero-App")
+                // Streaming client that follows all redirects (GitHub 302 -> AWS S3)
+                val downloadClient = App.streamingHttpClient.newBuilder()
+                    .followRedirects(true)
+                    .followSslRedirects(true)
                     .build()
 
-                val response = App.okHttpClient.newCall(request).execute()
-                val body = response.body ?: throw Exception("Empty APK payload")
+                var request = Request.Builder()
+                    .url(targetApkUrl)
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android) AdZero-App")
+                    .build()
+
+                var response = downloadClient.newCall(request).execute()
+
+                // Fallback attempt with alternative asset name if 404
+                if (!response.isSuccessful && response.code == 404) {
+                    val fallbackUrl = "https://github.com/kaif-webwork/AdZero/releases/latest/download/app-debug.apk"
+                    response = downloadClient.newCall(Request.Builder().url(fallbackUrl).build()).execute()
+                }
+
+                if (!response.isSuccessful) {
+                    throw Exception("Download error: HTTP ${response.code} ${response.message}")
+                }
+
+                val body = response.body ?: throw Exception("Empty APK response from server")
                 val contentLength = body.contentLength().coerceAtLeast(1L)
 
                 body.byteStream().use { input ->
@@ -191,7 +239,7 @@ object UpdateManager {
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             totalRead += bytesRead
-                            val progress = (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+                            val progress = (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0.05f, 1f)
                             _updateState.value = _updateState.value.copy(downloadProgress = progress)
                         }
                     }
@@ -211,12 +259,8 @@ object UpdateManager {
                 e.printStackTrace()
                 _updateState.value = _updateState.value.copy(
                     isDownloading = false,
-                    error = "Download failed: ${e.localizedMessage}"
+                    error = "Download failed: ${e.localizedMessage ?: "Network error"}"
                 )
-                // Fallback to browser download if in-app download failed
-                withContext(Dispatchers.Main) {
-                    openBrowserUrl(context, downloadUrl)
-                }
             }
         }
     }
