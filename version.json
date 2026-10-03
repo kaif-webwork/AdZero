@@ -1,7 +1,7 @@
 {
-  "versionCode": 9,
-  "versionName": "v4.5",
-  "downloadUrl": "https://github.com/kaif-webwork/AdZero/releases/latest/download/adzero.apk",
+  "versionCode": 10,
+  "versionName": "v4.6",
+  "downloadUrl": "https://github.com/kaif-webwork/AdZero/releases/download/v4.6/adzero.apk",
   "updatePriority": 1,
-  "releaseNotes": "🚀 AdZero v4.5 Update:\n• 1200% Ultra Butter-Smooth scrolling on all screens (Home, Player, Shorts, Search, Channel)\n• Permanent fix for 3-4s video stall (stable ExoPlayer media item update)\n• Background Audio & Lock Screen Media Notification controls\n• YouTube-identical swipe gestures & fluid miniplayer\n• Clean single-pass GPU rendering & zero micro-stutter"
+  "releaseNotes": "🚀 AdZero v4.6 Update:\n• Apple Liquid Glass update popup with premium frosted glass design\n• Direct in-app APK download — no more browser redirects\n• 1200% Ultra Butter-Smooth scrolling on all screens\n• Permanent fix for 3-4s video stall at start\n• Background Audio & Lock Screen Media Notification controls\n• YouTube-identical swipe gestures & fluid miniplayer\n• Clean single-pass GPU rendering & zero micro-stutter"
 }
