@@ -131,8 +131,7 @@ fun ChannelScreen(
     val shouldLoadMoreChannel = remember {
         derivedStateOf {
             val totalItems = channelListState.layoutInfo.totalItemsCount
-            val lastVisibleItem = channelListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            totalItems > 0 && lastVisibleItem >= totalItems - 5
+            totalItems > 0 && (channelListState.firstVisibleItemIndex + 5) >= totalItems
         }
     }
 
@@ -388,7 +387,7 @@ fun ChannelScreen(
                                         verticalArrangement = Arrangement.spacedBy(12.dp),
                                         modifier = Modifier.fillMaxSize()
                                     ) {
-                                        itemsIndexed(channelVideos, key = { index, video -> "grid_${video.id}_$index" }) { _, video ->
+                                        items(channelVideos, key = { video -> "grid_${video.id}" }) { video ->
                                             GridVideoCard(video = video, onClick = { onVideoClick(video) })
                                         }
                                     }
@@ -398,7 +397,7 @@ fun ChannelScreen(
                                         modifier = Modifier.fillMaxSize(),
                                         contentPadding = PaddingValues(bottom = 80.dp)
                                     ) {
-                                        itemsIndexed(channelVideos, key = { index, video -> "list_${video.id}_$index" }) { _, video ->
+                                        items(channelVideos, key = { video -> "list_${video.id}" }) { video ->
                                             VideoCard(video = video, onClick = { onVideoClick(video) })
                                         }
 

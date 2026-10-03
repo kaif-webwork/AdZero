@@ -132,41 +132,24 @@ fun VideoCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-            .border(
-                BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
-                ),
-                RoundedCornerShape(22.dp)
-            )
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
             .clickable { onClick() }
     ) {
-        // Thumbnail with rounded top corners
+        // Thumbnail with rounded corners
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                .graphicsLayer { clip = true }
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
         ) {
-            val context = LocalContext.current
-            val thumbModel = remember(video.id, video.thumbnailUrl) {
-                val primaryUrl = if (video.thumbnailUrl.startsWith("//")) "https:${video.thumbnailUrl}" else video.thumbnailUrl
-                coil.request.ImageRequest.Builder(context)
-                    .data(primaryUrl)
-                    .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
-                    .size(640, 360) // Downsample thumbnail to display bounds — reduces RAM usage by ~70%
-                    .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                    .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-                    .crossfade(150)
-                    .build()
+            val primaryThumbUrl = remember(video.thumbnailUrl) {
+                if (video.thumbnailUrl.startsWith("//")) "https:${video.thumbnailUrl}" else video.thumbnailUrl
             }
 
             AsyncImage(
-                model = thumbModel,
+                model = primaryThumbUrl,
                 contentDescription = video.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
@@ -179,9 +162,9 @@ fun VideoCard(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(8.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(if (isRealLiveCard) Color.Red else Color.Black.copy(alpha = 0.85f))
-                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     if (isRealLiveCard) {
                         Row(
@@ -207,21 +190,12 @@ fun VideoCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 0.dp, top = 10.dp, bottom = 12.dp),
+                .padding(start = 4.dp, end = 0.dp, top = 10.dp, bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            val context = LocalContext.current
-            val avatarModel = remember(video.channelAvatarUrl) {
-                coil.request.ImageRequest.Builder(context)
-                    .data(video.channelAvatarUrl)
-                    .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
-                    .size(96, 96)
-                    .crossfade(true)
-                    .build()
-            }
             // Channel Avatar
             AsyncImage(
-                model = avatarModel,
+                model = video.channelAvatarUrl,
                 contentDescription = video.channelName,
                 modifier = Modifier
                     .size(36.dp)
@@ -412,7 +386,7 @@ fun ShortsShelf(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
         ) {
-            itemsIndexed(shorts, key = { index, short -> "short_${short.id}_$index" }) { _, short ->
+            items(shorts, key = { it.id }) { short ->
                 Box(
                     modifier = Modifier
                         .width(140.dp)
@@ -426,7 +400,7 @@ fun ShortsShelf(
                             .data(short.thumbnailUrl)
                             .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
                             .size(280, 480)
-                            .crossfade(true)
+                            .crossfade(false)
                             .build()
                     }
 

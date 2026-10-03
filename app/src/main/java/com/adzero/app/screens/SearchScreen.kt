@@ -181,8 +181,7 @@ fun SearchScreen(
     val shouldLoadMoreSearch = remember {
         derivedStateOf {
             val totalItems = searchListState.layoutInfo.totalItemsCount
-            val lastVisibleItem = searchListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            totalItems > 0 && lastVisibleItem >= totalItems - 5
+            totalItems > 0 && (searchListState.firstVisibleItemIndex + 5) >= totalItems
         }
     }
 
@@ -322,26 +321,12 @@ fun SearchScreen(
                         Text("No results found for \"$searchQuery\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
-                    val shouldLoadMoreInner by remember {
-                        derivedStateOf {
-                            val totalItems = searchListState.layoutInfo.totalItemsCount
-                            val lastVisibleItem = searchListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                            totalItems > 0 && lastVisibleItem >= totalItems - 4
-                        }
-                    }
-
-                    LaunchedEffect(shouldLoadMoreInner) {
-                        if (shouldLoadMoreInner && !isMoreLoading && searchNextPage != null) {
-                            loadMoreSearchResults()
-                        }
-                    }
-
                     LazyColumn(
                         state = searchListState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 80.dp)
                     ) {
-                        itemsIndexed(results, key = { index, video -> "${video.id}_$index" }, contentType = { _, _ -> "video_card" }) { _, video ->
+                        items(results, key = { video -> video.id }, contentType = { _ -> "video_card" }) { video ->
                             VideoCard(
                                 video = video,
                                 onClick = { 

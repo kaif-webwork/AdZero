@@ -166,6 +166,14 @@ object ExtractionManager {
         }.ifBlank { id }
     }
 
+    fun invalidateCache(videoId: String) {
+        val normalizedId = normalizeId(videoId)
+        extractionCache.remove(normalizedId)
+        if (_extractionState.value?.let { (it as? ExtractionResult.Success)?.videoId == normalizedId } == true) {
+            _extractionState.value = null
+        }
+    }
+
     fun clear() {
         activeJobs.values.forEach { it.cancel() }
         activeJobs.clear()

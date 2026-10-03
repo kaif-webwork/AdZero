@@ -73,10 +73,17 @@ fun MainAppNavigation(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val scope = rememberCoroutineScope()
-    val haptic = LocalHapticFeedback.current
-
+    val currentVideoFromManager by com.adzero.app.data.GlobalPlayerManager.currentVideo.collectAsState()
     var activeVideo by remember { mutableStateOf<Video?>(null) }
 
+    LaunchedEffect(currentVideoFromManager) {
+        val managerVideo = currentVideoFromManager
+        if (managerVideo != null && activeVideo?.id != managerVideo.id) {
+            activeVideo = managerVideo
+        }
+    }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
     val density = LocalDensity.current
     val decaySpec = rememberSplineBasedDecay<Float>()
     val playerDraggableState = remember(decaySpec) {
@@ -84,16 +91,22 @@ fun MainAppNavigation(
             initialValue = PlayerState.Closed,
             positionalThreshold = { distance: Float -> distance * 0.5f },
             velocityThreshold = { with(density) { 100.dp.toPx() } },
-            snapAnimationSpec = spring(stiffness = Spring.StiffnessLow),
+            snapAnimationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
             decayAnimationSpec = decaySpec
         )
+    }
+
+    val haptic = LocalHapticFeedback.current
+    val handleVideoClick: (Video) -> Unit = { video ->
+        com.adzero.app.data.GlobalPlayerManager.playVideo(context, video)
+        activeVideo = video
+        scope.launch { playerDraggableState.animateTo(PlayerState.Expanded) }
     }
 
     val bottomTabs = listOf(Tab.Home, Tab.Shorts, Tab.Subscriptions, Tab.Profile)
 
     // Update Logic
     val updateState by com.adzero.app.data.UpdateManager.updateState.collectAsState()
-    val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(Unit) {
         com.adzero.app.data.UpdateManager.checkForUpdates(context)
@@ -143,6 +156,8 @@ fun MainAppNavigation(
     // 2. Back gesture while player is in Mini Player mode -> Close Mini Player
     BackHandler(enabled = isPlayerCollapsed) {
         scope.launch {
+            com.adzero.app.data.GlobalPlayerManager.stopAndClear()
+            activeVideo = null
             playerDraggableState.animateTo(PlayerState.Closed)
         }
     }
@@ -189,10 +204,7 @@ fun MainAppNavigation(
                     ) {
                         composable(Screen.Home.route) {
                             HomeScreen(
-                                onVideoClick = { video ->
-                                    activeVideo = video
-                                    scope.launch { playerDraggableState.animateTo(PlayerState.Expanded) }
-                                },
+                                onVideoClick = handleVideoClick,
                                 onSearchClick = { navController.navigate(Screen.Search.route) },
                                 onChannelClick = { channelName ->
                                     navController.navigate(Screen.Channel.createRoute(channelName))
@@ -206,10 +218,7 @@ fun MainAppNavigation(
                         }
                         composable(Screen.Subscriptions.route) {
                             SubscriptionsScreen(
-                                onVideoClick = { video ->
-                                    activeVideo = video
-                                    scope.launch { playerDraggableState.animateTo(PlayerState.Expanded) }
-                                },
+                                onVideoClick = handleVideoClick,
                                 onChannelClick = { channelName ->
                                     navController.navigate(Screen.Channel.createRoute(channelName))
                                 },
@@ -220,20 +229,14 @@ fun MainAppNavigation(
                             ProfileScreen(
                                 currentTheme = currentTheme,
                                 onThemeChange = onThemeChange,
-                                onVideoClick = { video ->
-                                    activeVideo = video
-                                    scope.launch { playerDraggableState.animateTo(PlayerState.Expanded) }
-                                },
+                                onVideoClick = handleVideoClick,
                                 onSettingsClick = { navController.navigate(Screen.Settings.route) }
                             )
                         }
                         composable(Screen.Search.route) {
                             SearchScreen(
                                 onBack = { navController.popBackStack() },
-                                onVideoClick = { video ->
-                                    activeVideo = video
-                                    scope.launch { playerDraggableState.animateTo(PlayerState.Expanded) }
-                                },
+                                onVideoClick = handleVideoClick,
                                 onChannelClick = { channelName ->
                                     navController.navigate(Screen.Channel.createRoute(channelName))
                                 }
@@ -247,10 +250,7 @@ fun MainAppNavigation(
                             ChannelScreen(
                                 channelName = channelName,
                                 onBack = { navController.popBackStack() },
-                                onVideoClick = { video ->
-                                    activeVideo = video
-                                    scope.launch { playerDraggableState.animateTo(PlayerState.Expanded) }
-                                }
+                                onVideoClick = handleVideoClick
                             )
                         }
                         composable(Screen.Settings.route) {
@@ -298,14 +298,12 @@ fun MainAppNavigation(
                     dragModifier = dragModifier,
                     onMinimize = { scope.launch { playerDraggableState.animateTo(PlayerState.Collapsed) } },
                     onClose = {
+                        com.adzero.app.data.GlobalPlayerManager.stopAndClear()
                         activeVideo = null
                         scope.launch { playerDraggableState.animateTo(PlayerState.Closed) }
                     },
                     onExpand = { scope.launch { playerDraggableState.animateTo(PlayerState.Expanded) } },
-                    onVideoClick = { newVideo ->
-                        activeVideo = newVideo
-                        scope.launch { playerDraggableState.animateTo(PlayerState.Expanded) }
-                    },
+                    onVideoClick = handleVideoClick,
                     onChannelClick = { channelName ->
                         navController.navigate(Screen.Channel.createRoute(channelName))
                     }

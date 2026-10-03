@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -169,8 +170,6 @@ fun HomeScreen(
                 withContext(Dispatchers.Main) {
                     if (appended.isNotEmpty()) {
                         videosState = (videosState + appended).distinctBy { it.id }
-                        // Speculatively extract next 2 items in background
-                        appended.take(2).forEach { ExtractionManager.startExtraction(it, isSpeculative = true) }
                     }
                     isMoreLoading = false
                 }
@@ -183,12 +182,11 @@ fun HomeScreen(
         }
     }
 
-    // Trigger load more when 6 items from the end (earlier prefetch = smoother scroll)
+    // Trigger load more when 6 items from the end (evaluated only when item index shifts)
     val shouldLoadMore = remember {
         derivedStateOf {
             val totalItems = listState.layoutInfo.totalItemsCount
-            val lastVisibleItem = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            totalItems > 0 && lastVisibleItem >= totalItems - 6
+            totalItems > 0 && (listState.firstVisibleItemIndex + 5) >= totalItems
         }
     }
 
@@ -198,25 +196,8 @@ fun HomeScreen(
         }
     }
 
-    // Proactively pre-load upcoming video thumbnails into Coil cache for liquid 120Hz smooth scrolling
-    LaunchedEffect(listState.firstVisibleItemIndex, videosState) {
-        val currentIndex = listState.firstVisibleItemIndex
-        val nextVideos = videosState.drop(currentIndex + 1).take(5)
-        nextVideos.forEach { v ->
-            val url = if (v.thumbnailUrl.startsWith("//")) "https:${v.thumbnailUrl}" else v.thumbnailUrl
-            if (url.isNotBlank()) {
-                coil.Coil.imageLoader(context).enqueue(
-                    coil.request.ImageRequest.Builder(context)
-                        .data(url)
-                        .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
-                        .size(640, 360)
-                        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-                        .build()
-                )
-            }
-        }
-    }
+    // Coil with enhanced 150MB disk/memory cache handles thumbnail streaming automatically
+    // without thrashing the main thread on every scroll index change.
 
     LaunchedEffect(selectedCategory) {
         val fastCached = com.adzero.app.data.FastContentStore.getFeed(context, selectedCategory)
@@ -285,7 +266,8 @@ fun HomeScreen(
                     if (filteredVideos.isNotEmpty()) {
                         videosState = filteredVideos
                         com.adzero.app.data.FastContentStore.saveFeed(context, selectedCategory, filteredVideos)
-                        filteredVideos.take(3).forEach { video ->
+                        // Speculatively pre-warm only the first video so it starts instantly without CPU overload
+                        filteredVideos.firstOrNull()?.let { video ->
                             ExtractionManager.startExtraction(video, isSpeculative = true)
                         }
                     }
@@ -427,11 +409,48 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 80.dp)
                     ) {
-                            itemsIndexed(
-                                items = videosState,
-                                key = { index, video -> "${video.id}_$index" },
-                                contentType = { _, _ -> "video_card" }
-                            ) { index, video ->
+                        val firstVideos = if (videosState.size >= 2) videosState.take(2) else videosState
+                        items(
+                            items = firstVideos,
+                            key = { video -> video.id },
+                            contentType = { _ -> "video_card" }
+                        ) { video ->
+                            VideoCard(
+                                video = video,
+                                onClick = {
+                                    ExtractionManager.startExtraction(video)
+                                    onVideoClick(video)
+                                },
+                                onChannelClick = onChannelClick
+                            )
+                        }
+
+                        // Independent Shorts Shelf item
+                        if (shortsState.isNotEmpty() && videosState.size >= 2) {
+                            item(key = "home_shorts_shelf", contentType = "shorts_shelf") {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                                )
+                                ShortsShelf(
+                                    shorts = shortsState,
+                                    onShortClick = onVideoClick,
+                                    onSeeAll = onShortsClick
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                                )
+                            }
+                        }
+
+                        val remainingVideos = if (videosState.size > 2) videosState.drop(2) else emptyList()
+                        if (remainingVideos.isNotEmpty()) {
+                            items(
+                                items = remainingVideos,
+                                key = { video -> video.id },
+                                contentType = { _ -> "video_card" }
+                            ) { video ->
                                 VideoCard(
                                     video = video,
                                     onClick = {
@@ -440,36 +459,19 @@ fun HomeScreen(
                                     },
                                     onChannelClick = onChannelClick
                                 )
-
-                                // Inject Shorts shelf after the 2nd video (YouTube-style)
-                                if (index == 1 && shortsState.isNotEmpty()) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(vertical = 4.dp),
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-                                    )
-                                    ShortsShelf(
-                                        shorts = shortsState,
-                                        onShortClick = onVideoClick,
-                                        onSeeAll = onShortsClick
-                                    )
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(vertical = 4.dp),
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-                                    )
-                                }
                             }
+                        }
 
-                            // Bottom Pagination Loader (Infinite Scroll)
-                            if (isMoreLoading) {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(20.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        YouTubeLoading()
-                                    }
+                        // Bottom Pagination Loader (Infinite Scroll)
+                        if (isMoreLoading) {
+                            item(key = "home_pagination_loader", contentType = "loader") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(20.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    YouTubeLoading()
                                 }
                             }
                         }
@@ -477,6 +479,7 @@ fun HomeScreen(
                 }
             }
         }
+    }
 }
 
 fun getCategorySearchQueries(category: String): List<String> {

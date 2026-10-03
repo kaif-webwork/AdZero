@@ -59,6 +59,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -132,36 +134,54 @@ fun PlayerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
-    // ── Helper: Network-aware quality selection ───────────────────────────
+    // ── Helper: Network-aware quality selection (Zero-Stutter Auto Quality) ───
     fun selectBestAutoQuality(streams: List<VideoStream>, bw: Int, wifi: Boolean): VideoStream? {
         if (streams.isEmpty()) return null
-        val effectiveBandwidth = if (wifi) Int.MAX_VALUE else bw
+
+        fun findStream(quality: String, preferMp4: Boolean = true): VideoStream? {
+            return if (preferMp4) {
+                streams.firstOrNull { it.quality.contains(quality) && it.format.lowercase().contains("mp4") }
+                    ?: streams.firstOrNull { it.quality.contains(quality) }
+            } else {
+                streams.firstOrNull { it.quality.contains(quality) }
+            }
+        }
+
+        // 1. Prioritize Progressive streams if available (single stream, instant start, zero buffer)
+        val progressive720 = streams.firstOrNull { !it.isVideoOnly && it.quality.contains("720") }
+        if (progressive720 != null && (wifi || bw >= 2500)) return progressive720
+        val progressive480 = streams.firstOrNull { !it.isVideoOnly && it.quality.contains("480") }
+        if (progressive480 != null && bw in 1500..3499) return progressive480
+
+        val effectiveBandwidth = if (wifi) 8000 else bw
         return when {
             effectiveBandwidth >= 8000 ->
-                streams.firstOrNull { it.quality.contains("1080") }
-                ?: streams.firstOrNull { it.quality.contains("720") }
-                ?: streams.firstOrNull { it.quality.contains("480") }
+                progressive720
+                ?: findStream("720") // 720p MP4 is ultra-smooth and fast on mobile
+                ?: findStream("1080")
+                ?: findStream("480")
                 ?: streams.firstOrNull { it.url.isNotBlank() }
-            effectiveBandwidth >= 4000 ->
-                streams.firstOrNull { it.quality.contains("720") }
-                ?: streams.firstOrNull { it.quality.contains("480") }
-                ?: streams.firstOrNull { it.quality.contains("360") }
+            effectiveBandwidth >= 3500 ->
+                progressive720
+                ?: findStream("720")
+                ?: findStream("480")
+                ?: findStream("360")
                 ?: streams.firstOrNull { it.url.isNotBlank() }
             effectiveBandwidth >= 1500 ->
-                streams.firstOrNull { it.quality.contains("480") }
-                ?: streams.firstOrNull { it.quality.contains("360") }
-                ?: streams.firstOrNull { it.quality.contains("240") }
+                findStream("480")
+                ?: findStream("360")
+                ?: findStream("240")
                 ?: streams.firstOrNull { it.url.isNotBlank() }
             effectiveBandwidth >= 500 ->
-                streams.firstOrNull { it.quality.contains("360") }
-                ?: streams.firstOrNull { it.quality.contains("240") }
-                ?: streams.firstOrNull { it.quality.contains("144") }
+                findStream("360")
+                ?: findStream("240")
+                ?: findStream("144")
                 ?: streams.firstOrNull { it.url.isNotBlank() }
             else ->
-                // Very poor / no signal — pick lowest available
-                streams.minByOrNull { s ->
-                    Regex("(\\d+)p").find(s.quality)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 9999
-                } ?: streams.firstOrNull()
+                findStream("360")
+                ?: findStream("240")
+                ?: findStream("144")
+                ?: streams.firstOrNull()
         }
     }
 
@@ -199,6 +219,7 @@ fun PlayerScreen(
     var showSettingsSheet by remember { mutableStateOf(false) }
     var doubleTapFeedback by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     var isLongPressing by remember { mutableStateOf(false) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     // true = user manually picked a quality; auto-select won't override it
     var userSelectedQuality by remember { mutableStateOf(false) }
 
@@ -317,6 +338,9 @@ fun PlayerScreen(
                 }
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                // Invalidate cached stream for this video so next load will re-extract valid non-expired tokens
+                com.adzero.app.data.ExtractionManager.invalidateCache(video.id)
+
                 // If user specifically requested a quality, do NOT silently downgrade it!
                 if (userSelectedQuality) {
                     // Just attempt to retry the same stream since it's the requested quality
@@ -497,6 +521,7 @@ fun PlayerScreen(
             likesCount = if (info.likeCount > 0) formatNumberCount(info.likeCount) else video.likes
             descriptionText = info.description?.content ?: ""
             relatedVideos = related
+            com.adzero.app.data.GlobalPlayerManager.setQueue(related)
             commentsList = realComments
             playerStatusText = if (extractedVideoStreams.isEmpty()) "No playable streams" else "Playing ad-free 🛡️"
         }
@@ -529,7 +554,9 @@ fun PlayerScreen(
 
         val normalizedId = ExtractionManager.normalizeId(video.id)
         val cached = ExtractionManager.extractionState.value
+        var hasProcessedCached = false
         if (cached is ExtractionManager.ExtractionResult.Success && cached.videoId == normalizedId) {
+            hasProcessedCached = true
             processStreamInfo(cached.info, cached.comments)
         } else {
             ExtractionManager.startExtraction(video)
@@ -537,7 +564,14 @@ fun PlayerScreen(
 
         ExtractionManager.extractionState.collectLatest { result ->
             when (result) {
-                is ExtractionManager.ExtractionResult.Success -> if (result.videoId == normalizedId) processStreamInfo(result.info, result.comments)
+                is ExtractionManager.ExtractionResult.Success -> {
+                    if (result.videoId == normalizedId) {
+                        if (!hasProcessedCached) {
+                            processStreamInfo(result.info, result.comments)
+                        }
+                        hasProcessedCached = false
+                    }
+                }
                 is ExtractionManager.ExtractionResult.Error -> if (result.videoId == normalizedId) playerStatusText = "Error: ${result.message.take(40)}"
                 is ExtractionManager.ExtractionResult.Loading -> if (ExtractionManager.normalizeId(result.video.id) == normalizedId) playerStatusText = "Extracting..."
                 null -> {}
@@ -552,7 +586,7 @@ fun PlayerScreen(
             val currentSpeed = exoPlayer.playbackParameters.speed
             val currentAudioUrl = currentAudioStream?.url
 
-            // Guard: skip reload if nothing changed (fixed: removed broken `activeAudioUrl != null` check)
+            // Guard: skip reload if nothing changed
             val isAlreadyLoaded = lastLoadedStreamUrl == stream.url
                 && currentSpeed == playbackSpeed
                 && activeAudioUrl == currentAudioUrl
@@ -571,9 +605,11 @@ fun PlayerScreen(
             activeAudioUrl = currentAudioUrl
             lastPlayedVideoId = video.id
 
-            // Build clean OkHttp data source factory for unthrottled streaming speed
-            val httpDsFactory = OkHttpDataSource.Factory(App.okHttpClient)
+            val httpDsFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
                 .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(20000)
+                .setReadTimeoutMs(20000)
 
             val upstreamDsFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDsFactory)
             val mediaSourceFactory = DefaultMediaSourceFactory(upstreamDsFactory)
@@ -592,7 +628,11 @@ fun PlayerScreen(
                     .build()
             }
 
-            val videoMediaItemBuilder = MediaItem.Builder().setUri(stream.url)
+            val mediaMetadata = GlobalPlayerManager.buildMetadata(video)
+            val videoMediaItemBuilder = MediaItem.Builder()
+                .setMediaId(video.id)
+                .setUri(stream.url)
+                .setMediaMetadata(mediaMetadata)
             if (subtitleConfigs.isNotEmpty()) {
                 videoMediaItemBuilder.setSubtitleConfigurations(subtitleConfigs)
             }
@@ -633,7 +673,7 @@ fun PlayerScreen(
             val finalSource = if (!stream.isHls && stream.isVideoOnly && chosenAudio != null
                 && chosenAudio.url.isNotBlank()) {
                 val audioSource = mediaSourceFactory.createMediaSource(MediaItem.fromUri(chosenAudio.url))
-                MergingMediaSource(false, false, videoSource, audioSource)
+                MergingMediaSource(true, true, videoSource, audioSource)
             } else {
                 videoSource
             }
@@ -643,10 +683,8 @@ fun PlayerScreen(
             exoPlayer.setMediaSource(finalSource, currentPos)
             exoPlayer.setPlaybackSpeed(playbackSpeed)
             exoPlayer.prepare()
-            if (currentPos == 0L) {
-                exoPlayer.seekTo(0L)
-            }
             exoPlayer.play()
+            GlobalPlayerManager.onVideoStarted(context, video)
         }
     }
 
@@ -700,91 +738,136 @@ fun PlayerScreen(
         if (isCollapsed) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 14.dp, bottom = 88.dp)
-                    .width(180.dp)
-                    .height(104.dp)
-                    .then(dragModifier)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.Black)
-                    .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
-            ) {
-                // Video Content Surface
-                if (selectedStream != null) {
-                    AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                player = exoPlayer
-                                useController = false
-                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 8.dp, bottom = 86.dp)
+                    .height(64.dp)
+                    .shadow(elevation = 12.dp, shape = RoundedCornerShape(14.dp), spotColor = Color.Black)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF212121))
+                    .border(0.75.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(14.dp))
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragEnd = {},
+                            onDrag = { change, dragAmount ->
+                                // Swipe UP -> Expand to full player
+                                if (dragAmount.y < -15f) {
+                                    change.consume()
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onExpand()
+                                }
+                                // Swipe DOWN -> Close player
+                                else if (dragAmount.y > 15f) {
+                                    change.consume()
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    try {
+                                        exoPlayer.stop()
+                                        exoPlayer.clearMediaItems()
+                                    } catch (e: Exception) { e.printStackTrace() }
+                                    onClose()
+                                }
+                                // Horizontal Swipe (Left or Right) -> Dismiss player
+                                else if (kotlin.math.abs(dragAmount.x) > 25f) {
+                                    change.consume()
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    try {
+                                        exoPlayer.stop()
+                                        exoPlayer.clearMediaItems()
+                                    } catch (e: Exception) { e.printStackTrace() }
+                                    onClose()
+                                }
                             }
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                        update = { view ->
-                            view.player = exoPlayer
-                            view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                        }
-                    )
-                } else {
-                    AsyncImage(
-                        model = video.thumbnailUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                // ── Card Body Click Surface (Tapping expands to Portrait View) ─────
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                            indication = null
-                        ) { onExpand() }
-                )
-
-                // Top Control Row: Play/Pause on Left, Close on Right (Perfectly Aligned Horizontally)
+                        )
+                    }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onExpand() }
+            ) {
                 Row(
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .fillMaxSize()
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left: Play / Pause Button
+                    // Left: 16:9 Video surface or Thumbnail
                     Box(
                         modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.65f)),
-                        contentAlignment = Alignment.Center
+                            .width(96.dp)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black)
+                    ) {
+                        if (selectedStream != null) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    PlayerView(ctx).apply {
+                                        player = exoPlayer
+                                        useController = false
+                                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                        layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                                update = { view ->
+                                    view.player = exoPlayer
+                                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                }
+                            )
+                        } else {
+                            AsyncImage(
+                                model = video.thumbnailUrl,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+
+                    // Center: Video Title & Channel Name
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 10.dp),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = video.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = channelName,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = Color(0xFFAAAAAA),
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    // Right: Play/Pause and Close buttons
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         IconButton(
                             onClick = {
                                 if (isPlaying) exoPlayer.pause() else exoPlayer.play()
                             },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.size(40.dp)
                         ) {
                             Icon(
                                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = "Play/Pause",
                                 tint = Color.White,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                    }
 
-                    // Right: Close (X) Button
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.65f)),
-                        contentAlignment = Alignment.Center
-                    ) {
                         IconButton(
                             onClick = {
                                 try {
@@ -795,26 +878,26 @@ fun PlayerScreen(
                                 }
                                 onClose()
                             },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.size(40.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Close",
                                 tint = Color.White,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
                 }
 
-                // 3. Bottom Edge Scrub Progress Bar Line (Pink/Red)
+                // Bottom: Red Progress Bar Line across the miniplayer
                 val progress = if (totalDuration > 0) (playbackPosition.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) else 0f
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp)
+                        .height(2.5.dp)
                         .align(Alignment.BottomStart)
-                        .background(Color.White.copy(alpha = 0.20f))
+                        .background(Color.White.copy(alpha = 0.15f))
                 ) {
                     Box(
                         modifier = Modifier
@@ -877,80 +960,127 @@ fun PlayerScreen(
                     }
 
                         // ── YouTube Gesture Layer ─────────────────────────────────────────────
-                        // Handles: tap (controls), double-tap seek, long-press 2x,
-                        // vertical swipe (volume right / brightness left), horizontal scrub
+                        // Unified high-performance gesture processor: tap, double-tap seek, long-press 2x,
+                        // vertical swipe (minimize in portrait, landscape toggle, brightness/volume),
+                        // horizontal scrub, pinch-to-fill
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                // Layer 1: Drag gestures — strictly partitioned landscape touch zones & Portrait mode gestures
-                                .pointerInput(totalDuration, isLandscape) {
-                                    var dragStartX: Float
-                                    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE") var dragStartY: Float
-                                    var dragAxis: String? // "vertical" | "horizontal"
-                                    var initialZone: String? // "left" | "center" | "right"
-                                    val AXIS_LOCK_THRESHOLD = 12f  // px before axis is decided
-                                    val VERTICAL_SENSITIVITY = 0.004f  // fraction per px
-                                    val ROTATION_SWIPE_THRESHOLD = 80f // px swipe required to toggle orientation
+                                .pointerInput(isLandscape, totalDuration, playbackSpeed) {
+                                    val swipeDownThreshold = 35.dp.toPx()
+                                    val swipeUpThreshold = 42.dp.toPx()
+                                    val touchSlop = 12.dp.toPx()
+
+                                    var lastTapTime = 0L
+                                    var lastTapX = 0f
+                                    var pendingSingleTapJob: kotlinx.coroutines.Job? = null
 
                                     awaitEachGesture {
-                                        // Wait for first finger down
                                         val down = awaitFirstDown(requireUnconsumed = false)
-                                        dragStartX = down.position.x
-                                        dragStartY = down.position.y
-                                        dragAxis = null
+                                        val downX = down.position.x
+                                        val screenW = size.width.toFloat()
 
-                                        val width = size.width
-                                        initialZone = if (isLandscape) {
-                                            when {
-                                                dragStartX < width * 0.35f -> "left"   // Brightness control zone
-                                                dragStartX > width * 0.65f -> "right"  // Volume control zone
-                                                else -> "center"                       // Center zone: Swipe-down to Portrait
+                                        var isDragging = false
+                                        var dragDirection: String? = null // "horizontal" | "vertical"
+                                        var isLongPressActive = false
+                                        var gestureFinished = false
+
+                                        // Launch long press detector (400ms hold -> 2x speed)
+                                        val longPressJob = scope.launch {
+                                            delay(400)
+                                            if (!isDragging && !gestureFinished) {
+                                                isLongPressActive = true
+                                                isLongPressing = true
+                                                exoPlayer.setPlaybackSpeed(2.0f)
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             }
-                                        } else {
-                                            "portrait"
                                         }
 
-                                        var accX = 0f
-                                        var accY = 0f
-                                        var cummulativeDy = 0f
+                                        var cumDx = 0f
+                                        var cumDy = 0f
 
-                                        do {
+                                        while (true) {
                                             val event = awaitPointerEvent()
-                                            val drag = event.changes.firstOrNull() ?: break
-                                            val dx = drag.position.x - drag.previousPosition.x
-                                            val dy = drag.position.y - drag.previousPosition.y
-                                            accX += kotlin.math.abs(dx)
-                                            accY += kotlin.math.abs(dy)
-                                            cummulativeDy += dy
 
-                                            // Lock axis once threshold exceeded
-                                            if (dragAxis == null && (accX > AXIS_LOCK_THRESHOLD || accY > AXIS_LOCK_THRESHOLD)) {
-                                                if (isLandscape) {
-                                                    // In landscape mode, only allow vertical gestures to prevent conflict with volume/brightness/portrait swipe
-                                                    if (accY > accX) {
-                                                        dragAxis = "vertical"
+                                            // Multi-touch for Pinch-to-Zoom (Landscape mode)
+                                            if (isLandscape && event.changes.size >= 2) {
+                                                longPressJob.cancel()
+                                                val p0 = event.changes[0]
+                                                val p1 = event.changes[1]
+                                                val prevDist = (p0.previousPosition - p1.previousPosition).getDistance()
+                                                val currDist = (p0.position - p1.position).getDistance()
+                                                if (prevDist > 0f) {
+                                                    val zoomRatio = currDist / prevDist
+                                                    if (zoomRatio > 1.04f && !isFillMode) {
+                                                        p0.consume()
+                                                        p1.consume()
+                                                        isFillMode = true
+                                                        showFillModeHud = true
+                                                    } else if (zoomRatio < 0.96f && isFillMode) {
+                                                        p0.consume()
+                                                        p1.consume()
+                                                        isFillMode = false
+                                                        showFillModeHud = true
                                                     }
-                                                } else {
-                                                    dragAxis = if (accY > accX) "vertical" else "horizontal"
                                                 }
                                             }
 
-                                            when (dragAxis) {
-                                                "vertical" -> {
-                                                    if (isLandscape) {
-                                                        drag.consume()
-                                                        val delta = -dy * VERTICAL_SENSITIVITY
-                                                        when (initialZone) {
-                                                            "right" -> {
-                                                                // Volume control (Right 35% zone ONLY)
-                                                                val newVol = (volumeLevel + delta * maxVolume).coerceIn(0f, maxVolume.toFloat())
-                                                                volumeLevel = newVol
-                                                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol.toInt(), 0)
-                                                                showVolumeHud = true
-                                                                showBrightnessHud = false
+                                            val change = event.changes.firstOrNull() ?: break
+                                            if (!change.pressed) {
+                                                // Finger lifted
+                                                break
+                                            }
+
+                                            val deltaX = change.position.x - change.previousPosition.x
+                                            val deltaY = change.position.y - change.previousPosition.y
+                                            cumDx += deltaX
+                                            cumDy += deltaY
+
+                                            val absTotalX = kotlin.math.abs(cumDx)
+                                            val absTotalY = kotlin.math.abs(cumDy)
+
+                                            // Determine if gesture has crossed touch slop
+                                            if (!isDragging && (absTotalX > touchSlop || absTotalY > touchSlop)) {
+                                                isDragging = true
+                                                longPressJob.cancel()
+                                                pendingSingleTapJob?.cancel()
+                                                pendingSingleTapJob = null
+                                                dragDirection = if (absTotalY > absTotalX) "vertical" else "horizontal"
+                                            }
+
+                                            if (isDragging) {
+                                                longPressJob.cancel()
+                                                when (dragDirection) {
+                                                    "vertical" -> {
+                                                        change.consume()
+                                                        if (!isLandscape) {
+                                                            // PORTRAIT MODE:
+                                                            // 1. Swipe Down -> Minimize to Miniplayer
+                                                            if (cumDy > swipeDownThreshold) {
+                                                                gestureFinished = true
+                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                onMinimize()
+                                                                break
                                                             }
-                                                            "left" -> {
-                                                                // Brightness control (Left 35% zone ONLY)
+                                                            // 2. Swipe Up -> Fullscreen Landscape
+                                                            else if (cumDy < -swipeUpThreshold) {
+                                                                gestureFinished = true
+                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                                                break
+                                                            }
+                                                        } else {
+                                                            // LANDSCAPE MODE:
+                                                            // 1. Swipe Down -> Exit to Portrait
+                                                            if (cumDy > swipeDownThreshold * 1.25f) {
+                                                                gestureFinished = true
+                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                                                break
+                                                            }
+                                                            // 2. Left side -> Brightness
+                                                            else if (downX < screenW * 0.45f) {
+                                                                val delta = -deltaY * 0.005f
                                                                 val newBright = (brightnessLevel + delta).coerceIn(0.01f, 1f)
                                                                 brightnessLevel = newBright
                                                                 val activity = context as? Activity
@@ -962,89 +1092,76 @@ fun PlayerScreen(
                                                                 showBrightnessHud = true
                                                                 showVolumeHud = false
                                                             }
-                                                            "center" -> {
-                                                                // Center 30% zone ONLY: reserved for swipe-down to portrait mode
+                                                            // 3. Right side -> Volume
+                                                            else if (downX > screenW * 0.55f) {
+                                                                val delta = -deltaY * 0.005f
+                                                                val newVol = (volumeLevel + delta * maxVolume).coerceIn(0f, maxVolume.toFloat())
+                                                                volumeLevel = newVol
+                                                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol.toInt(), 0)
+                                                                showVolumeHud = true
+                                                                showBrightnessHud = false
                                                             }
                                                         }
                                                     }
-                                                }
-                                                "horizontal" -> {
-                                                    if (!isLandscape && totalDuration > 0) {
-                                                        drag.consume()
-                                                        val scrubDelta = (dx / size.width) * totalDuration
-                                                        scrubPosition = (scrubPosition + scrubDelta).toLong()
-                                                            .coerceIn(0L, totalDuration)
-                                                        isScrubbing = true
+                                                    "horizontal" -> {
+                                                        if (!isLandscape && totalDuration > 0) {
+                                                            change.consume()
+                                                            val scrubDelta = (deltaX / screenW) * totalDuration
+                                                            scrubPosition = (scrubPosition + scrubDelta).toLong().coerceIn(0L, totalDuration)
+                                                            isScrubbing = true
+                                                        }
                                                     }
                                                 }
                                             }
-                                        } while (event.changes.any { it.pressed })
+                                        }
 
-                                        // Finger lifted
-                                        if (dragAxis == "horizontal" && isScrubbing && !isLandscape) {
+                                        // --- GESTURE ENDED (Finger Lifted) ---
+                                        longPressJob.cancel()
+
+                                        // If 2x speed was active, restore playback speed
+                                        if (isLongPressActive) {
+                                            isLongPressing = false
+                                            exoPlayer.setPlaybackSpeed(playbackSpeed)
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        }
+
+                                        // If scrubbing was active, seek to scrubbed position
+                                        if (isScrubbing && !isLandscape) {
                                             exoPlayer.seekTo(scrubPosition)
                                             isScrubbing = false
                                         }
-                                        if (dragAxis == "vertical") {
-                                            showVolumeHud = false
-                                            showBrightnessHud = false
 
-                                            // Toggle orientation / minimize based on swipe gesture direction:
-                                            // 1. Portrait mode -> Swipe UP (cummulativeDy < -ROTATION_SWIPE_THRESHOLD) -> Landscape
-                                            if (!isLandscape && cummulativeDy < -ROTATION_SWIPE_THRESHOLD) {
-                                                (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                            }
-                                            // 2. Portrait mode -> Swipe DOWN on video surface (cummulativeDy > 50f) -> Minimize to Mini Player
-                                            else if (!isLandscape && cummulativeDy > 50f) {
-                                                onMinimize()
-                                            }
-                                            // 3. Landscape mode -> Swipe DOWN in CENTER zone ONLY -> Portrait
-                                            else if (isLandscape && initialZone == "center" && cummulativeDy > ROTATION_SWIPE_THRESHOLD) {
-                                                (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                                            }
-                                        }
-                                    }
-                                }
-                                // Layer 2: Tap + double-tap + long-press
-                                .pointerInput(Unit) {
-                                    detectTapGestures(
-                                        onTap = { isControlsVisible = !isControlsVisible },
-                                        onDoubleTap = { offset ->
-                                            val isRight = offset.x > (size.width / 2)
-                                            if (isRight) {
-                                                exoPlayer.seekTo(exoPlayer.currentPosition + 10_000)
-                                                doubleTapFeedback = Pair(true, "+10s")
-                                            } else {
-                                                exoPlayer.seekTo((exoPlayer.currentPosition - 10_000).coerceAtLeast(0))
-                                                doubleTapFeedback = Pair(false, "-10s")
-                                            }
-                                        },
-                                        onLongPress = {
-                                            isLongPressing = true
-                                            exoPlayer.setPlaybackSpeed(2.0f)
-                                        },
-                                        onPress = {
-                                            try { awaitRelease() } finally {
-                                                if (isLongPressing) {
-                                                    isLongPressing = false
-                                                    exoPlayer.setPlaybackSpeed(playbackSpeed)
+                                        // If it was a quick touch and NOT dragging / long pressing / finished:
+                                        if (!isDragging && !isLongPressActive && !gestureFinished) {
+                                            val tapTime = System.currentTimeMillis()
+                                            val isDoubleTap = (tapTime - lastTapTime < 320) && (kotlin.math.abs(downX - lastTapX) < 140f)
+
+                                            if (isDoubleTap) {
+                                                // Cancel pending single tap
+                                                pendingSingleTapJob?.cancel()
+                                                pendingSingleTapJob = null
+                                                lastTapTime = 0L
+
+                                                // Double tap seek (-10s / +10s)
+                                                val isRight = downX > (screenW / 2)
+                                                if (isRight) {
+                                                    exoPlayer.seekTo(exoPlayer.currentPosition + 10_000)
+                                                    doubleTapFeedback = Pair(true, "+10s")
+                                                } else {
+                                                    exoPlayer.seekTo((exoPlayer.currentPosition - 10_000).coerceAtLeast(0))
+                                                    doubleTapFeedback = Pair(false, "-10s")
                                                 }
-                                            }
-                                        }
-                                    )
-                                }
-                                // Layer 3: Pinch-to-fill (Landscape only) — pinch out = fill/crop, pinch in = fit
-                                .pointerInput(isLandscape, isFillMode) {
-                                    if (isLandscape) {
-                                        detectTransformGestures { _, _, zoom, _ ->
-                                            if (zoom > 1.05f && !isFillMode) {
-                                                // Pinch OUT -> Fill / Crop mode
-                                                isFillMode = true
-                                                showFillModeHud = true
-                                            } else if (zoom < 0.95f && isFillMode) {
-                                                // Pinch IN -> Fit / Letterbox mode
-                                                isFillMode = false
-                                                showFillModeHud = true
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            } else {
+                                                lastTapTime = tapTime
+                                                lastTapX = downX
+
+                                                // Wait 300ms for a possible second tap before toggling controls overlay
+                                                pendingSingleTapJob?.cancel()
+                                                pendingSingleTapJob = scope.launch {
+                                                    delay(300)
+                                                    isControlsVisible = !isControlsVisible
+                                                }
                                             }
                                         }
                                     }
@@ -1096,7 +1213,8 @@ fun PlayerScreen(
                                 onPlayPause = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
                                 onRewind = { exoPlayer.seekTo((exoPlayer.currentPosition - 10000).coerceAtLeast(0)) },
                                 onForward = { exoPlayer.seekTo(exoPlayer.currentPosition + 10000) },
-                                onNext = { relatedVideos.firstOrNull()?.let { nextVideo -> onVideoClick(nextVideo) } },
+                                onNext = { com.adzero.app.data.GlobalPlayerManager.playNext() },
+                                onPrevious = { com.adzero.app.data.GlobalPlayerManager.playPrevious() },
                                 onBack = {
                                     if (isLandscape) {
                                         (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -1268,44 +1386,8 @@ fun PlayerScreen(
                         }
                     }
 
-                // MiniPlayer UI (Text and Controls) - Portrait Only
-                if (!isLandscape && fraction < 0.5f) {
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = videoTitle,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = channelName,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
-                            )
-                        }
-                        IconButton(onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() }) {
-                            Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        IconButton(onClick = onClose) {
-                            Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                }
-
-
-
                 // ── YouTube 2026 Expanded UI — Portrait Only ─────────────────
-                if (!isLandscape && fraction > 0.01f) {
+                if (!isLandscape) {
                     var isDescriptionExpanded by remember { mutableStateOf(false) }
                     var isSubscribed by remember { mutableStateOf(false) }
                     var isMoreRelatedLoading by remember { mutableStateOf(false) }
@@ -1325,8 +1407,8 @@ fun PlayerScreen(
 
                                 withContext(Dispatchers.Main) {
                                     relatedVideos = (relatedVideos + newItems).distinctBy { it.id }
+                                    com.adzero.app.data.GlobalPlayerManager.setQueue(relatedVideos)
                                     isMoreRelatedLoading = false
-                                    newItems.take(2).forEach { ExtractionManager.startExtraction(it, isSpeculative = true) }
                                 }
                             } catch(e: Exception) {
                                 e.printStackTrace()
@@ -1338,8 +1420,7 @@ fun PlayerScreen(
                     val shouldLoadMoreRelated = remember {
                         derivedStateOf {
                             val totalItems = relatedListState.layoutInfo.totalItemsCount
-                            val lastVisibleItem = relatedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                            totalItems > 0 && lastVisibleItem >= totalItems - 4
+                            totalItems > 0 && (relatedListState.firstVisibleItemIndex + 4) >= totalItems
                         }
                     }
 
@@ -1357,7 +1438,7 @@ fun PlayerScreen(
                         contentPadding = PaddingValues(bottom = 80.dp)
                     ) {
                         // ── Title + Views row (YouTube 2026 format) ─────────
-                        item {
+                        item(key = "player_title_views", contentType = "header") {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1408,7 +1489,7 @@ fun PlayerScreen(
                         }
 
                         // ── Channel Avatar + Subscribe + Action Pills Row (YouTube 2026) ─────
-                        item {
+                        item(key = "player_channel_row", contentType = "channel_row") {
                             UnifiedChannelAndActionRow(
                                 avatar = channelAvatar,
                                 name = channelName,
@@ -1421,7 +1502,7 @@ fun PlayerScreen(
                         }
 
                         // ── Comments Card (Exact YouTube 2026 Rounded Card) ──
-                        item {
+                        item(key = "player_comments_card", contentType = "comments_card") {
                             CommentsCard(
                                 commentCount = commentsList.size,
                                 onClick = { showCommentsSheet = true }
@@ -1429,7 +1510,11 @@ fun PlayerScreen(
                         }
 
                         // ── Related Videos (no extra header) ──────────────────
-                        itemsIndexed(relatedVideos, key = { index, related -> "rel_${related.id}_$index" }) { _, related ->
+                        items(
+                            items = relatedVideos,
+                            key = { related -> "rel_${related.id}" },
+                            contentType = { _ -> "related_video" }
+                        ) { related ->
                             VideoCard(
                                 video = related,
                                 onClick = {
@@ -1441,7 +1526,7 @@ fun PlayerScreen(
                         }
 
                         if (isMoreRelatedLoading) {
-                            item {
+                            item(key = "player_related_loader", contentType = "loader") {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()

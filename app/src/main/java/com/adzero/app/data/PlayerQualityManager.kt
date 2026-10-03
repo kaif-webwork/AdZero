@@ -20,7 +20,12 @@ object PlayerQualityManager {
 
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        preferredQuality = prefs.getString(KEY_PREFERRED_QUALITY, "Auto") ?: "Auto"
+        val saved = prefs.getString(KEY_PREFERRED_QUALITY, "Auto") ?: "Auto"
+        // Clamp extreme resolutions like 4K/2K that overwhelm mobile decoders and network buffers
+        preferredQuality = if (saved.contains("2160") || saved.contains("1440")) "Auto" else saved
+        if (preferredQuality != saved) {
+            prefs.edit().putString(KEY_PREFERRED_QUALITY, preferredQuality).apply()
+        }
     }
 
     fun setPreferredQuality(context: Context, quality: String) {

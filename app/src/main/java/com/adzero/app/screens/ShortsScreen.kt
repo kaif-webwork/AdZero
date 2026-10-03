@@ -101,7 +101,8 @@ fun ShortsScreen(
                 withContext(Dispatchers.Main) {
                     if (newItems.isNotEmpty()) {
                         shortsList = shortsList + newItems
-                        newItems.take(6).forEach { video ->
+                        // Pre-extract only the immediate next video so vertical swipe remains at 120 FPS
+                        newItems.firstOrNull()?.let { video ->
                             com.adzero.app.data.ExtractionManager.startExtraction(video, isSpeculative = true)
                         }
                     }
@@ -183,25 +184,12 @@ fun ShortsScreen(
         }
     }
 
-    // Pre-extract upcoming shorts & preload thumbnails as user scrolls for ZERO buffering & 0ms swipe lag
+    // Pre-extract ONLY the immediate next short for 0ms swipe transition without dropping gesture frames
     LaunchedEffect(pagerState.currentPage, shortsList) {
-        val current = pagerState.currentPage
-        for (i in (current + 1)..(current + 4)) {
-            if (i in shortsList.indices) {
-                val s = shortsList[i]
-                com.adzero.app.data.ExtractionManager.startExtraction(s, isSpeculative = true)
-                if (s.thumbnailUrl.isNotBlank()) {
-                    coil.Coil.imageLoader(context).enqueue(
-                        coil.request.ImageRequest.Builder(context)
-                            .data(s.thumbnailUrl)
-                            .bitmapConfig(android.graphics.Bitmap.Config.RGB_565)
-                            .size(280, 480)
-                            .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                            .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-                            .build()
-                    )
-                }
-            }
+        val next = pagerState.currentPage + 1
+        if (next in shortsList.indices) {
+            val s = shortsList[next]
+            com.adzero.app.data.ExtractionManager.startExtraction(s, isSpeculative = true)
         }
     }
 
@@ -227,7 +215,7 @@ fun ShortsScreen(
         } else {
             VerticalPager(
                 state = pagerState,
-                key = { page -> if (page in shortsList.indices) "${shortsList[page].id}_$page" else page.toString() },
+                key = { page -> if (page in shortsList.indices) shortsList[page].id else page.toString() },
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 val isVisible = page == pagerState.currentPage

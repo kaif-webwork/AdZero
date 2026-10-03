@@ -30,6 +30,18 @@ class App : Application(), ImageLoaderFactory {
         val isExtractorInitialized = AtomicBoolean(false)
         lateinit var okHttpClient: OkHttpClient
             private set
+        val streamingHttpClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .readTimeout(30, TimeUnit.SECONDS)
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .retryOnConnectionFailure(true)
+                .connectionPool(okhttp3.ConnectionPool(20, 5, TimeUnit.MINUTES))
+                .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
+                .build()
+        }
     }
 
     override fun newImageLoader(): ImageLoader {
@@ -37,21 +49,22 @@ class App : Application(), ImageLoaderFactory {
         val isLowRamDevice = activityManager?.isLowRamDevice == true
 
         return ImageLoader.Builder(this)
-            .allowHardware(!isLowRamDevice) // Hardware bitmaps can crash or lag low-RAM devices
+            .allowHardware(!isLowRamDevice) // Hardware bitmaps on supported devices for 120Hz rendering
             .bitmapConfig(android.graphics.Bitmap.Config.RGB_565) // 50% RAM reduction per bitmap compared to ARGB_8888
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(if (isLowRamDevice) 0.10 else 0.15) // Safe RAM limit
+                    .maxSizePercent(if (isLowRamDevice) 0.15 else 0.25) // Generous RAM cache prevents re-decoding during scroll
+                    .strongReferencesEnabled(true)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(40L * 1024L * 1024L) // 40 MB disk cache
+                    .maxSizeBytes(150L * 1024L * 1024L) // 150 MB disk cache prevents constant cache eviction
                     .build()
             }
             .respectCacheHeaders(false)
-            .crossfade(true)
+            .crossfade(false) // Instant 0ms render from cache eliminates scroll animation jank
             .build()
     }
 
